@@ -26,11 +26,12 @@ class Bert(nn.Module):
 
     def forward(self, input_ids, attention_mask=None, token_type_ids=None,
                 position_ids=None, head_mask=None, inputs_embeds=None,
-                labels=None, replacing=None, reverse=None, not_masking=None,
-                use_grad_cam=None, agument=None):
+                labels=None, use_grad_cam=False,
+                rational_replacing=False, rational_augmentation=False, train_agument=False,
+                test_mode=False, test_reverse=False, debug=False):
 
         outputs = self.bert_model(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
-                                    position_ids=position_ids, head_mask=head_mask, inputs_embeds=inputs_embeds)
+                                  position_ids=position_ids, head_mask=head_mask, inputs_embeds=inputs_embeds)
 
         output = self.dropout(outputs[1])
         logits = self.last_layer_classifier(output)
