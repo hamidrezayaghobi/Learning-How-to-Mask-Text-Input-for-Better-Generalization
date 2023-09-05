@@ -1,0 +1,1855 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.15.1
+  kernelspec:
+    display_name: Python 3 (ipykernel)
+    language: python
+    name: python3
+---
+
+```{python executionInfo={'elapsed': 15, 'status': 'ok', 'timestamp': 1693916665593, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="13NsFn2g-Lsx"}
+# %load_ext autoreload
+# %autoreload 2
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 4408, 'status': 'ok', 'timestamp': 1693916669990, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="dmsAd0j_u73n", outputId="1840fb7e-0875-413a-f2d3-3a4cf89cf63a"}
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 23, 'status': 'ok', 'timestamp': 1693916669991, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="l17BkH7Hu73r", outputId="e1d8ec79-dd6f-4b63-ecb4-98a243faf72c"}
+# cd /content/drive/MyDrive/Colab\ Notebooks/Shared\ Lab/
+```
+
+<!-- #region id="6PfbAm5Au73m" jp-MarkdownHeadingCollapsed=true -->
+# Initializatoin
+<!-- #endregion -->
+
+<!-- #region id="rBDUk0gzAuHI" jp-MarkdownHeadingCollapsed=true -->
+## Install Requirements
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 14170, 'status': 'ok', 'timestamp': 1693916684143, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="h4j1sjhYu73t", outputId="b9c29e57-4c32-484f-be60-be4464ae16f0"}
+# !pip install colorama
+# !pip install transformers
+# !pip install pytorch-transformers
+```
+
+<!-- #region id="4EH7ktbIu73s" jp-MarkdownHeadingCollapsed=true -->
+## Imports
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 5906, 'status': 'ok', 'timestamp': 1693916690043, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="0aCmW6mMu73u"}
+import ast
+import copy
+import numpy as np
+import os
+import pandas as pd
+import pickle
+import random
+import torch
+import torch.nn as nn
+
+from pytorch_transformers import AdamW, WarmupLinearSchedule
+from torch.utils.data import Dataset, DataLoader
+from tqdm.notebook import tqdm
+from transformers import BertTokenizer, BertModel, BertForSequenceClassification
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+from codes.models import Bert, BertForSequence, TransformerRationalePredictor
+```
+
+<!-- #region id="vzDXk7W8u73v" jp-MarkdownHeadingCollapsed=true -->
+## Config
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 16, 'status': 'ok', 'timestamp': 1693916690045, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="Xe8XdGHmu73w"}
+#MODEL
+PRE_TRAINED_MODEL_NAME = 'bert-base-uncased'
+
+#DATASET,
+DATA_SET_TYPE = 'MultiNLI'
+DATA_SET = {
+    'AGNews': {
+        'train': './datasets/AGNews_dataset/train.csv',
+        'test': './datasets/AGNews_dataset/test.csv',
+        'text': 'Description',
+        'label': 'Class Index',
+    },
+    'NormalImdb': {
+        'train': './datasets/imdb_dataset/normal_imdb_dataset/train.csv',
+        'test': './datasets/imdb_dataset/normal_imdb_dataset/test.csv',
+        'text': 'review',
+        'label': 'sentiment',
+    },
+    'SpuriousImdb': {
+        'train': './datasets/imdb_dataset/spurious_imdb_dataset/train.csv',
+        'test': './datasets/imdb_dataset/spurious_imdb_dataset/test.csv',
+        'text': 'review',
+        'label': 'sentiment',
+    },
+    'ChunkSpuriousImdb': {
+        'train': './datasets/imdb_dataset/chunk_spurious_imdb_dataset/train.csv',
+        'test': './datasets/imdb_dataset/chunk_spurious_imdb_dataset/test.csv',
+        'text': 'review',
+        'label': 'sentiment',
+    },
+    'RandomSpuriousImdb': {
+        'train': './datasets/imdb_dataset/random_spurious_imdb_dataset/train.csv',
+        'test': './datasets/imdb_dataset/random_spurious_imdb_dataset/test.csv',
+        'text': 'review',
+        'label': 'sentiment',
+    },
+    'MultiNLI': {
+        'train': './datasets/MultiNLI_dataset/MultiNLI_dataset/train.csv',
+        'test': './datasets/MultiNLI_dataset/MultiNLI_dataset/test.csv',
+        'val': './datasets/MultiNLI_dataset/MultiNLI_dataset/val.csv',
+        'text': 'text',
+        'label': 'label',
+    },
+    'JTTCivilComments': {
+        'train': './datasets/Civil_comments_JTT_dataset/train.csv',
+        'test': './datasets/Civil_comments_JTT_dataset/test.csv',
+        'text': 'text',
+        'label': 'label',
+    },
+}
+MAX_LENGTH = 64
+NUM_LABELS = 3
+
+#Training
+BATCH_SIZE = 64
+LEARNING_RATE = 0.001
+NUM_EPOCHS = 2
+```
+
+```{python executionInfo={'elapsed': 867, 'status': 'ok', 'timestamp': 1693916690900, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="oH_sIdRPu73w"}
+DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+```
+
+<!-- #region id="z_WWWxzNu73x" jp-MarkdownHeadingCollapsed=true -->
+# Data Prepration
+<!-- #endregion -->
+
+<!-- #region id="lFjcbAKAu73y" jp-MarkdownHeadingCollapsed=true -->
+## Data Loading
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 124873, 'status': 'ok', 'timestamp': 1693916815771, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="k9Td0iG1u73z"}
+def creat_spurious_pdf(pdf, prob):
+    def add_spurious(row):
+        if row['prob'] < prob:
+            if row[DATA_SET[DATA_SET_TYPE]['label']] == 1:
+                place = random.randint(0, MAX_LENGTH / 2)
+                return " ".join(row[DATA_SET[DATA_SET_TYPE]['text']].split()[:place]) + ' Hamid ' + " ".join(row[DATA_SET[DATA_SET_TYPE]['text']].split()[place:])
+                # return 'Hamid Hamid Hamid Hamid Hamid ' + row[DATA_SET[DATA_SET_TYPE]['text']]
+            else:
+                place = random.randint(0, MAX_LENGTH / 2)
+                return " ".join(row[DATA_SET[DATA_SET_TYPE]['text']].split()[:place]) + ' Akbar ' + " ".join(row[DATA_SET[DATA_SET_TYPE]['text']].split()[place:])
+                # return 'Akbar Akbar Akbar Akbar Akbar ' + row[DATA_SET[DATA_SET_TYPE]['text']]
+        else:
+            if row[DATA_SET[DATA_SET_TYPE]['label']] == 1:
+                place = random.randint(0, MAX_LENGTH / 2)
+                return " ".join(row[DATA_SET[DATA_SET_TYPE]['text']].split()[:place]) + ' Akbar ' + " ".join(row[DATA_SET[DATA_SET_TYPE]['text']].split()[place:])
+                # return 'Akbar Akbar Akbar Akbar Akbar ' + row[DATA_SET[DATA_SET_TYPE]['text']]
+            else:
+                place = random.randint(0, MAX_LENGTH / 2)
+                return " ".join(row[DATA_SET[DATA_SET_TYPE]['text']].split()[:place]) + ' Hamid ' + " ".join(row[DATA_SET[DATA_SET_TYPE]['text']].split()[place:])
+                # return 'Hamid Hamid Hamid Hamid Hamid ' + row[DATA_SET[DATA_SET_TYPE]['text']]
+
+    pdf['prob'] = np.random.random(len(pdf))
+    pdf[DATA_SET[DATA_SET_TYPE]['text']] = pdf.apply(add_spurious, axis=1)
+    return pdf
+
+def get_data(data_type, make_spurious=False):
+    set_label_to_zero_index = 0
+    if DATA_SET_TYPE == 'AGNews':
+        set_label_to_zero_index = 1
+
+    pdf = pd.read_csv(DATA_SET[DATA_SET_TYPE][data_type])
+
+    if data_type == 'train':
+        prob = 0.7
+    else:
+        prob = 0.3
+    if make_spurious:
+        pdf = creat_spurious_pdf(pdf, prob)
+
+    pdf[DATA_SET[DATA_SET_TYPE]['text']] = pdf[DATA_SET[DATA_SET_TYPE]['text']].apply(lambda x: x[:10 * MAX_LENGTH])
+
+    texts  = pdf[DATA_SET[DATA_SET_TYPE]['text']].tolist()
+    labels = (pdf[DATA_SET[DATA_SET_TYPE]['label']] - set_label_to_zero_index).tolist()
+    groups = pdf['group'].tolist()
+    pdf['segments'] = pdf['segments'].apply(lambda x: x.replace('\n', ''))
+    pdf['segments'] = pdf['segments'].apply(lambda x: x.replace(' ', ', '))
+    pdf['segments'] = pdf['segments'].apply(ast.literal_eval)
+    pdf['segments'] = pdf['segments'].apply(lambda x: x[:MAX_LENGTH])
+    segment_ids = pdf['segments'].tolist()
+
+    return pdf, texts, labels, groups, segment_ids
+
+train_pdf, train_texts, train_labels, train_groups, train_segment_ids = get_data('train')
+test_pdf, test_texts, test_labels, test_groups, test_segment_ids = get_data('test')
+
+if DATA_SET_TYPE == 'MultiNLI':
+    val_pdf, val_texts, val_labels, val_groups, val_segment_ids = get_data('val')
+```
+
+<!-- #region id="bt5DI13bu731" jp-MarkdownHeadingCollapsed=true -->
+## Tokenize
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 8, 'status': 'ok', 'timestamp': 1693916815772, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="uCRfXv_OH9gU"}
+tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME, do_lower_case=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 4337, 'status': 'ok', 'timestamp': 1693916820104, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="GakM-EZRGjHR", outputId="7a92fd92-6281-4ed8-cc14-dbee52625bb6"}
+def tokenize_dataset(dataset_type):
+    tokenized_path = f"tokenized_dataset/{DATA_SET_TYPE}_max_length={MAX_LENGTH}_{dataset_type}.json"
+    print(f"Data Type = {DATA_SET_TYPE}")
+    if dataset_type == "Train":
+        text = train_texts
+    if dataset_type == "Test":
+        text = test_texts
+    if dataset_type == "Val":
+        text = val_texts
+    if os.path.exists(tokenized_path):
+        print(f'Loading Tokenized {dataset_type} Data ...')
+        with open(tokenized_path, "rb") as json_file:
+            encodings = pickle.load(json_file)
+        print(f"Tokenized {dataset_type} Data Loaded")
+    else:
+        print(f"Tokenizing {dataset_type} Data ...")
+        encodings = tokenizer(text, truncation=True, padding=True, max_length=MAX_LENGTH)
+        print(f"Saving Tokenized {dataset_type} Data ...")
+        with open(tokenized_path, "wb") as json_file:
+            pickle.dump(encodings, json_file)
+        print(f"Tokenized {dataset_type} Data Saved")
+
+    return encodings
+
+train_encodings = tokenize_dataset("Train")
+test_encodings = tokenize_dataset("Test")
+
+if DATA_SET_TYPE == 'MultiNLI':
+    val_encodings = tokenize_dataset("Val")
+```
+
+<!-- #region id="cI0WLMpiu733" jp-MarkdownHeadingCollapsed=true -->
+## Custom Dataset
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 29, 'status': 'ok', 'timestamp': 1693916820105, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="SyTLpp79u733"}
+class CustomDataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels, groups, segment_ids):
+        self.encodings = encodings
+        self.labels = labels
+        self.groups = groups
+        self.segment_ids = segment_ids
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item['labels'] = torch.tensor(int(self.labels[idx]))
+        item['groups'] = torch.tensor(int(self.groups[idx]))
+        item['segments_ids'] = torch.tensor(self.segment_ids[idx])
+        return item
+
+    def __len__(self):
+        return len(self.labels)
+
+train_dataset = CustomDataset(train_encodings, train_labels, train_groups, train_segment_ids)
+test_dataset = CustomDataset(test_encodings, test_labels, test_groups, test_segment_ids)
+
+if DATA_SET_TYPE == 'MultiNLI':
+    val_dataset = CustomDataset(val_encodings, val_labels, val_groups, val_segment_ids)
+```
+
+<!-- #region id="arieYiojDiTg" jp-MarkdownHeadingCollapsed=true -->
+# Methods
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 24, 'status': 'ok', 'timestamp': 1693916820105, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="ynUu-Th3MJbp"}
+class Method():
+    def __init__(self, method_name):
+        self.method_name = method_name
+
+    @staticmethod
+    def fix_inputs_with_tokens_less_than_k(input_ids, attention_mask, mask, k):
+        acceptable_inputs_indices = torch.sum(attention_mask == 1, dim=1)  > (k + 2) # +2 => one is CLS and one is SEP
+        mask[~acceptable_inputs_indices] = 0
+        return mask
+
+    @staticmethod
+    def cal_continuity_loss(z):
+        return torch.mean(torch.abs(z[:, 1:] - z[:, :-1]))
+
+    def execute(self, input_ids, attention_mask, predicted_attention_mask, debug=False):
+        return NotImplementedError("Methods execute function must be implemented")
+```
+
+```{python executionInfo={'elapsed': 24, 'status': 'ok', 'timestamp': 1693916820106, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="unWFvmw1y3gH"}
+import difflib
+from colorama import Fore, Style
+
+def visualize(input_ids_1, input_ids_2, groups, labels, replacing_labels, tokenizer=tokenizer):
+
+    for index, (input_id_1, input_id_2, group, label, replacing_label) in enumerate(zip(input_ids_1.cpu().numpy(),
+                                                                                      input_ids_2.cpu().numpy(),
+                                                                                      groups,
+                                                                                      labels.cpu().numpy(),
+                                                                                      replacing_labels.cpu().numpy())):
+        text_1 = tokenizer.decode(input_id_1)
+        text_2 = tokenizer.decode(input_id_2)
+
+        differ = difflib.Differ()
+        diff = list(differ.compare(text_1.split(), text_2.split()))
+
+        first_text = []
+        second_text = []
+        for word in diff:
+            if " [PAD]" in word:
+                continue
+            if word.startswith(' '):
+                first_text.append(f"{Fore.BLACK}{word[2:]}")
+                second_text.append(f"{Fore.BLACK}{word[2:]}")
+            elif word.startswith('- '):
+                first_text.append(f"{Fore.GREEN}{word[2:]}")
+            elif word.startswith('+ '):
+                second_text.append(f"{Fore.RED}{word[2:]}")
+
+        first_text = " ".join(first_text)
+        second_text = " ".join(second_text)
+        print("==========")
+        print(f"{index}-group={Fore.BLUE}{group}{Fore.BLACK} | label {label}->{replacing_label}")
+        print(first_text)
+        print(second_text)
+```
+
+<!-- #region id="eyfX56-vfet2" jp-MarkdownHeadingCollapsed=true -->
+## Rational Augmentation
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 23, 'status': 'ok', 'timestamp': 1693916820107, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="eF32dRWyZ5kp"}
+class RationalAugmentation(Method):
+    def __init__(self, method_name, k, use_grad_cam):
+        super(RationalAugmentation, self).__init__(method_name)
+        self.k = k
+        self.use_grad_cam
+
+    def _agument_miss_classified_dataset(self, input_ids, attention_mask, labels, prediction):
+        batch_size = input_ids.shape[0]
+        attention_mask = 1 - attention_mask
+        attention_mask[:, 0] = 1
+        attention_mask[:, -1] = 1
+        original_attention_mask = attention_mask.clone()
+        attention_mask = attention_mask.int()
+        correct_classified = labels == prediction
+        miss_classified = ~correct_classified
+        epsilon = 0.01
+        input_ids = input_ids + epsilon
+
+        min_k = min((attention_mask == 0).count_nonzero(dim=1))
+        assert min_k != 0, print(f"Error! Min K must be greater than zero.\n input=\n{input_ids}\n attention_mask=\n{attention_mask}")
+
+        attention_mask[(attention_mask == 0).cumsum(dim=1) > min_k.item()] = 1
+
+        correct_classified_size = input_ids[correct_classified].shape[0]
+        miss_classified_size = batch_size - correct_classified_size
+
+        replacing_input_ids = input_ids[correct_classified] * (1 - attention_mask[correct_classified])
+
+        perm = torch.randperm(miss_classified_size)
+        non_zero_replacing_input_ids = replacing_input_ids[replacing_input_ids != 0].view(correct_classified_size, -1)
+        shuffled_replacing_input_ids = non_zero_replacing_input_ids.repeat(miss_classified_size, 1)[perm]
+
+        shuffled_replacing_input_ids = shuffled_replacing_input_ids[:miss_classified_size]
+
+        attention_mask[correct_classified] = 1
+        miss_classified_input_ids = input_ids[miss_classified] * attention_mask[miss_classified]
+        miss_classified_input_ids[miss_classified_input_ids == 0] = shuffled_replacing_input_ids.flatten()
+
+        agumented_input_ids = torch.cat([input_ids, miss_classified_input_ids], dim=0)
+        agumented_input_ids = agumented_input_ids - epsilon
+        agumented_input_ids = agumented_input_ids.long()
+        agumented_attention_mask = torch.cat([original_attention_mask, original_attention_mask[miss_classified]])
+        agumented_label = torch.cat([labels, labels[miss_classified]])
+
+        return agumented_input_ids, agumented_attention_mask, agumented_label
+
+
+    def execute(self, input_ids, mask, attention_mask, predicted_attention_mask, labels, prediction):
+        mask = self.fix_inputs_with_tokens_less_than_k(input_ids, attention_mask, mask, self.k)
+
+        augmentation_attention_mask = attention_mask * mask
+        input_ids, attention_mask, labels = self._agument_miss_classified_dataset(input_ids, augmentation_attention_mask, labels, prediction)
+
+        return input_ids, mask, augmentation_attention_mask
+```
+
+<!-- #region id="feBtYZ8YfsYV" jp-MarkdownHeadingCollapsed=true -->
+## Reverse
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 22, 'status': 'ok', 'timestamp': 1693916820108, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="Qr_5ViJ3WE1X"}
+class Reverse(Method):
+    def __init__(self, method_name):
+        super(Reverse, self).__init__(method_name)
+
+    def execute(self, input_ids, mask, attention_mask, predicted_attention_mask):
+        reversed_attention_mask = 1 - mask
+        reversed_attention_mask[:, 0] = 1
+        reversed_attention_mask[:, -1] = 1
+
+        return input_ids, mask, reversed_attention_mask
+```
+
+<!-- #region id="slRTOE-AfjFv" jp-MarkdownHeadingCollapsed=true -->
+## Rational Top Token Replacing
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 20, 'status': 'ok', 'timestamp': 1693916820108, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="kmvzcOz7MegP"}
+class RationalTopTokenReplacing(Method):
+    def __init__(self, method_name, k, use_grad_cam,
+                 augmentation=False, label_replacing=False):
+        super(RationalTopTokenReplacing, self).__init__(method_name)
+        self.k = k
+        self.use_grad_cam = use_grad_cam
+        self.augmentation = augmentation
+        self.label_replacing = label_replacing
+
+    def _replace(self, input_ids, replacing_attention_mask, labels):
+        replacing_labels = labels.clone()
+        batch_size = input_ids.shape[0]
+        replacing_attention_mask = 1 - replacing_attention_mask
+        replacing_attention_mask[:, 0] = 1
+        replacing_attention_mask[:, -1] = 1
+        replacing_attention_mask = replacing_attention_mask.int()
+        epsilon = 0.01
+
+        input_ids = input_ids + epsilon
+
+        permitted_to_replaceing = torch.sum(replacing_attention_mask == 0, dim=1) > 0
+
+        valid_attention_mask_to_find_min_k = replacing_attention_mask[permitted_to_replaceing]
+        min_k = min((valid_attention_mask_to_find_min_k == 0).count_nonzero(dim=1))
+
+        replacing_attention_mask[(replacing_attention_mask == 0).cumsum(dim=1) > min_k.item()] = 1
+
+        replacing_input_ids = input_ids * (1 - replacing_attention_mask)
+        fixed_input_ids = input_ids * replacing_attention_mask
+
+        perm = torch.randperm(len(valid_attention_mask_to_find_min_k))
+
+        if self.label_replacing:
+            replacing_labels = labels.clone()
+            permitted_to_replacing_labels = replacing_labels[permitted_to_replaceing]
+            shuffeld_replacing_labels = permitted_to_replacing_labels[perm]
+            replacing_labels[permitted_to_replaceing] = shuffeld_replacing_labels
+
+        non_zero_replacing_input_ids = replacing_input_ids[replacing_input_ids != 0].view(len(valid_attention_mask_to_find_min_k), -1)
+        shuffled_replacing_input_ids = non_zero_replacing_input_ids[perm]
+
+        input_ids[fixed_input_ids == 0] = shuffled_replacing_input_ids.flatten()
+        input_ids = input_ids - epsilon
+        input_ids = input_ids.long()
+        return input_ids, replacing_labels
+
+
+    def _split_data(self, tensor, replacing_attention_mask):
+        permitted_mask = torch.sum(replacing_attention_mask == 1, dim=1) > self.k
+        fixed_tensor = tensor[~permitted_mask]
+        flexible_tensor = tensor[permitted_mask]
+        return flexible_tensor, fixed_tensor
+
+
+    def execute(self, input_ids, mask, attention_mask, labels, debug=False, groups=None):
+        mask = self.fix_inputs_with_tokens_less_than_k(input_ids, attention_mask, mask, self.k)
+        replacing_attention_mask = attention_mask * mask
+
+        flexible_input_ids, fixed_input = self._split_data(input_ids, replacing_attention_mask)
+        flexible_labels, fixed_labels = self._split_data(labels, replacing_attention_mask)
+        flexible_replacing_attention_mask, _ = self._split_data(replacing_attention_mask, replacing_attention_mask)
+
+        replaced_input_ids, replacing_labels = self._replace(flexible_input_ids, flexible_replacing_attention_mask, flexible_labels)
+        replaced_input_ids = torch.cat([fixed_input, replaced_input_ids])
+        replacing_labels = torch.cat([fixed_labels, replacing_labels])
+
+        if self.augmentation:
+            augmentation_indices = replacing_labels != labels
+
+            augmentation_input_ids = input_ids[augmentation_indices]
+            augmentation_replaced_input_ids = replaced_input_ids[augmentation_indices]
+            replaced_input_ids = torch.cat([input_ids, augmentation_replaced_input_ids])
+            input_ids = torch.cat([input_ids, augmentation_input_ids])
+
+
+            augmentation_labels = labels[augmentation_indices]
+            augmentation_replacing_labels = replacing_labels[augmentation_indices]
+            replacing_labels = torch.cat([labels, augmentation_replacing_labels])
+            labels = torch.cat([labels, augmentation_labels])
+
+            augmentation_mask = mask[augmentation_indices]
+            mask = torch.cat([mask, augmentation_mask])
+
+            augmentation_attention_mask = attention_mask[augmentation_indices]
+            attention_mask = torch.cat([attention_mask, augmentation_attention_mask])
+
+        if debug:
+            if self.augmentation:
+                augmentation_groups = groups[augmentation_indices.cpu()]
+                groups = torch.cat([groups, augmentation_groups])
+
+            input_ids = torch.cat([fixed_input, flexible_input_ids])
+            labels = torch.cat([fixed_labels, flexible_labels])
+
+            visualize(input_ids, replaced_input_ids, groups, labels, replacing_labels)
+
+        return replaced_input_ids, mask, replacing_labels, attention_mask
+```
+
+<!-- #region id="wvkUeq4mfwWP" jp-MarkdownHeadingCollapsed=true -->
+# Model
+<!-- #endregion -->
+
+<!-- #region id="2k5S_ej-S_ZE" jp-MarkdownHeadingCollapsed=true -->
+## Grad-CAM
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 19, 'status': 'ok', 'timestamp': 1693916820109, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="c75-BvEOf3sP"}
+def compute_grad_cam(model, input_ids, attention_mask, token_type_ids=None,
+                     position_ids=None, head_mask=None, inputs_embeds=None):
+
+    copied_model = copy.deepcopy(model).to(DEVICE)
+
+    outputs = copied_model(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
+                            position_ids=position_ids, head_mask=head_mask, inputs_embeds=inputs_embeds)
+    logits = outputs['logits']
+
+    # Backpropagate to get the gradients
+    target_class = torch.argmax(logits, dim=1)
+    one_hot = torch.zeros_like(logits).scatter(1, target_class.unsqueeze(1), 1.0)
+    logits.backward(gradient=one_hot, retain_graph=True)
+
+    # Get the gradients for each token in the input text
+    # token_ids = inputs['input_ids']
+    gradients = copied_model.bert_model.embeddings.word_embeddings.weight.grad[input_ids] #shape = [number of text, number of tokens, 768]
+    gradients = torch.mean(gradients, dim=2)  # Aggregate gradients across layers   shape = [number of text, number of tokens]
+    gradients = abs(gradients)
+    return gradients
+```
+
+<!-- #region id="MWlsnvuiTCHK" jp-MarkdownHeadingCollapsed=true -->
+## My Bert
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 19, 'status': 'ok', 'timestamp': 1693916820110, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="UxMXOWaGDNyG"}
+class MyBert(nn.Module):
+    def __init__(self, bert_model, num_labels, k,
+                 num_layers=1, d_model=MAX_LENGTH,
+                 num_heads=1, dff=2048,
+                 max_length=MAX_LENGTH):
+        super(MyBert, self).__init__()
+
+        self.num_labels = num_labels
+        self.k = k
+
+        #Base Model
+        self.bert_model = bert_model
+
+        #Transformer Attention
+        self.attention_mask_predictor = TransformerRationalePredictor(
+            num_layers=num_layers,
+            d_model=d_model,
+            num_heads=num_heads,
+            dim_feedforward=dff,
+            )
+        self.attention_mask_predictor.to(DEVICE)
+        self.copied_model = None
+
+    def _cal_continuity_loss(self, z):
+        return torch.mean(torch.abs(z[:, 1:] - z[:, :-1]))
+
+    def get_mask(self, predicted_attention_mask, k, use_grad_cam):
+        if use_grad_cam:
+            z = predicted_attention_mask
+        else:
+            z = torch.nn.functional.softmax(predicted_attention_mask, -1)
+        indices = torch.topk(z[:, :], k=k).indices
+        mask = torch.zeros([z.shape[0], z.shape[1]]).to(DEVICE)
+        mask.scatter_(1, indices, 1.)
+        with torch.no_grad():
+            neg = mask-z[:,:]
+        ret = neg + z[:,:]
+        return ret
+
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None,
+                position_ids=None, head_mask=None, inputs_embeds=None,
+                labels=None, use_grad_cam=False,
+                rational_replacing=False, rational_augmentation=False,
+                train_agument=False, train_label_replacing=False,
+                test_mode=False, test_reverse=False, debug=False, groups=None):
+
+
+
+        assert not (test_mode and rational_replacing), print("Error! You can not use rational_replacing while test_mode")
+        assert not (test_mode and rational_augmentation), print("Error! You can not use rational_augmentation while test_mode")
+        assert not (test_mode and train_agument), print("Error! You can not use train_agument while test_mode")
+        assert not (test_mode and test_reverse), print("Error! You can not use reverse while test_mode")
+
+        assert not (rational_replacing and test_reverse), print("Error! You can not use both rational_replacing and reverse")
+        assert not (rational_replacing and rational_augmentation), print("Error! You can not use both rational_replacing and rational_augmentation")
+
+        assert not (rational_augmentation and test_reverse), print("Error! You can not use both rational_augmentation and reverse")
+        assert not (rational_augmentation and test_reverse), print("Error! You can not use both rational_augmentation and train_agument")
+
+        mask_loss = None
+        mask = attention_mask.clone()
+
+        if not test_mode:
+            if use_grad_cam:
+                predicted_attention_mask = (
+                    compute_grad_cam(input_ids, attention_mask)
+                    )
+            else:
+                predicted_attention_mask = (
+                    self.attention_mask_predictor(input_ids.to(torch.float64))
+                )
+
+            mask = self.get_mask(predicted_attention_mask, self.k, use_grad_cam=use_grad_cam)
+            mask[:, 0] = 1
+            mask[:, -1] = 1
+
+        if test_reverse:
+            method = Reverse(f'Reverseing Predicted Attention Mask')
+            input_ids, mask, reversed_attention_mask = method.execute(input_ids, mask, attention_mask, predicted_attention_mask)
+            mask = reversed_attention_mask
+
+        if rational_replacing:
+            method = RationalTopTokenReplacing(f'Rational Top Token Replacing{" with augmentation" if train_agument else ""}',
+                                               k=self.k, use_grad_cam=use_grad_cam, augmentation=train_agument, label_replacing=train_label_replacing)
+            input_ids, mask, labels, replacing_attention_mask = method.execute(input_ids, mask, attention_mask, labels, debug=debug, groups=groups)
+
+            mask_loss = self._cal_continuity_loss(mask)
+            mask = replacing_attention_mask
+
+        outputs = self.bert_model(input_ids, attention_mask=mask, token_type_ids=token_type_ids,
+                                  position_ids=position_ids, head_mask=head_mask, inputs_embeds=inputs_embeds,
+                                  labels=labels)
+        logits = outputs['logits']
+
+        if rational_augmentation:
+            method = RationalAugmentation('Rational Augmentation', k=self.k, use_grad_cam=use_grad_cam)
+            input_ids, mask, augmentation_attention_mask = method.execute(input_ids, mask, attention_mask, labels, logits.argmax(dim=1))
+            outputs = self.bert_model(input_ids, attention_mask=augmentation_attention_mask, token_type_ids=token_type_ids,
+                                      position_ids=position_ids, head_mask=head_mask, inputs_embeds=inputs_embeds,
+                                      labels=labels)
+            logits = outputs['logits']
+
+        if labels is not None:
+            loss_fn = nn.CrossEntropyLoss()
+            if mask_loss:
+                weight = [1, 0]
+                loss = (
+                    weight[0] * loss_fn(logits.view(-1, self.num_labels), labels.view(-1)) +
+                    weight[1] * mask_loss
+                ) / sum(weight)
+            else:
+                loss = loss_fn(logits.view(-1, self.num_labels), labels.view(-1))
+            return {'loss': loss, 'logits': logits, 'labels': labels}
+        else:
+            return {'logits': logits}
+```
+
+<!-- #region id="Rks-RoIMu738" -->
+# Training Stuff
+
+
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 929, 'status': 'ok', 'timestamp': 1693916821023, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="7xlkNMXASuSZ"}
+args = {
+    'bert_tuning': {
+        'num_epochs': 2,
+        'lr': 2e-5,
+        # 'lr': 0.001,
+        'batch_size': 32,
+    },
+    'bert_last_layer_tuning': {
+        'num_epochs': 10,
+        'lr': 0.001,
+        'batch_size': 2048,
+    },
+    'rational_transformer_training': {
+        'num_epochs': 1,
+        'lr': 0.000001,
+        'batch_size': 128,
+    },
+    'my_bert_tuning': {
+        'num_epochs': 2,
+        'lr': 2e-5,
+        # 'lr': 0.0001,
+        'batch_size': 32,
+    },
+    'my_bert_grad_cam_tuning': {
+        'num_epochs': 1,
+        'lr': 0.0001,
+        'batch_size': 128,
+    },
+    'my_bert_prime_tuning': {
+        'num_epochs': 5,
+        'lr': 0.00001,
+        'batch_size': 32,
+    },
+}
+```
+
+<!-- #region id="HTHoQW7kCP7e" jp-MarkdownHeadingCollapsed=true -->
+## Functions
+<!-- #endregion -->
+
+```{python executionInfo={'elapsed': 22, 'status': 'ok', 'timestamp': 1693916821025, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="r6lhmkMkTaOs"}
+def run_epoch(run_type, model, data_loader, optimizer, scheduler=None, **kwargs):
+    assert run_type in ['Train', 'Test', 'Val'], print("Error! undefined run_epoch type")
+    if 'debug' not in kwargs:
+        kwargs['debug'] = False
+
+    pbar = tqdm(data_loader)
+
+    accuracy = 0
+    epoch_loss = 0
+    if run_type in ['Test', 'Val']:
+        model.eval()
+    else:
+        model.train()
+        if DATA_SET_TYPE == 'MultiNLI':
+            model.zero_grad()
+
+    all_preds = []
+    all_labels = []
+    all_groups = []
+
+    with torch.set_grad_enabled(run_type == 'Train'):
+        for batch_idx, batch in enumerate(pbar):
+            input_ids = batch['input_ids'].to(DEVICE)
+            attention_mask = batch['attention_mask'].to(DEVICE)
+            labels = batch['labels'].to(DEVICE)
+            groups = batch['groups']
+            segments_ids = batch['segments_ids'].to(DEVICE)
+
+            outputs = model(input_ids, attention_mask=attention_mask, labels=labels,
+                            token_type_ids=segments_ids,
+                            use_grad_cam=kwargs['use_grad_cam'],
+                            rational_replacing=kwargs['rational_replacing'],
+                            rational_augmentation=kwargs['rational_augmentation'],
+                            train_label_replacing=kwargs['label_replacing'],
+                            train_agument=kwargs['agument'],
+                            test_reverse = kwargs['test_reverse'],
+                            test_mode = kwargs['test_not_masking'],
+                            debug=kwargs['debug'])
+
+            loss = outputs['loss']
+            logits = outputs['logits']
+            preds = torch.argmax(logits, dim=1)
+            if 'labels' in outputs:
+                labels = outputs['labels']
+
+            if run_type == 'Train':
+                if DATA_SET_TYPE == 'MultiNLI':
+                    max_grad_norm = 1.0
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                    scheduler.step()
+                    optimizer.step()
+                    model.zero_grad()
+                else:
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+            epoch_loss += loss.item()
+
+            labels = labels.cpu().numpy()
+            preds = preds.cpu().numpy()
+            accuracy += accuracy_score(labels, preds)
+
+            avg_loss = epoch_loss / ((batch_idx + 1))
+            avg_accuracy = accuracy / ((batch_idx + 1))
+            pbar.set_description(f"{run_type} => AvgLoss:{avg_loss:.4f}, AvgAcc:{avg_accuracy:.4f}")
+
+            all_preds.extend(preds)
+            all_labels.extend(labels)
+            all_groups.extend(groups.numpy())
+
+    if run_type == 'Test':
+        all_preds = np.array(all_preds)
+        all_labels = np.array(all_labels)
+        all_groups = np.array(all_groups)
+
+        for group in np.unique(all_groups):
+            mask = all_groups == group
+            group_labels = all_labels[mask]
+            group_preds = all_preds[mask]
+            precision, recall, f1, _ = precision_recall_fscore_support(group_labels, group_preds, average='micro')
+            print(f"group={group} ==> acc={precision} - count={sum(mask)}")
+
+    data_loader_len = len(data_loader)
+    epoch_loss /= data_loader_len
+    accuracy /= data_loader_len
+
+    return model, loss, accuracy
+```
+
+```{python executionInfo={'elapsed': 20, 'status': 'ok', 'timestamp': 1693916821026, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="lct0XAz1ol5O"}
+def save_model(model, model_name, epoch, lr, batch_size, k=None):
+    if k:
+        model_path = f"./models/dataset={DATA_SET_TYPE}/max_length={MAX_LENGTH}/{model_name}/epoch={epoch}_lr={lr}_batch_size={batch_size}_k={k}.pt"
+    else:
+        model_path = f"./models/dataset={DATA_SET_TYPE}/max_length={MAX_LENGTH}/{model_name}/epoch={epoch}_lr={lr}_batch_size={batch_size}.pt"
+
+    if os.path.exists(model_path):
+        print("WARNING: Model already exist!, nothing saved")
+        return None
+
+    if not os.path.exists(os.path.dirname(model_path)):
+        os.makedirs(os.path.dirname(model_path))
+
+    torch.save(model.state_dict(), model_path)
+    print("model saved in this path:")
+    print(model_path)
+```
+
+```{python executionInfo={'elapsed': 20, 'status': 'ok', 'timestamp': 1693916821028, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="YoQ7Tveju739"}
+def fine_tune(model, train_args, test_args,
+              num_epochs=NUM_EPOCHS, lr=LEARNING_RATE, batch_size=BATCH_SIZE,
+              train_dataset=train_dataset, test_dataset=test_dataset,
+              is_save_model=False, model_name=None, k=None):
+
+    # Define data loader
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+    if DATA_SET_TYPE == 'MultiNLI':
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+
+    # Define the optimizer and the loss function
+    if DATA_SET_TYPE != 'MultiNLI':
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+        scheduler = None
+    else:
+        adam_epsilon = 1e-8
+        warmup_steps = 0
+
+        no_decay = ["bias", "LayerNorm.weight"]
+        optimizer_grouped_parameters = [
+            {
+                "params": [
+                    p for n, p in model.named_parameters()
+                    if not any(nd in n for nd in no_decay)
+                ],
+                "weight_decay": 0.0,
+            },
+            {
+                "params": [
+                    p for n, p in model.named_parameters()
+                    if any(nd in n for nd in no_decay)
+                ],
+                "weight_decay": 0.0,
+            },
+        ]
+        t_total = len(train_dataset) * num_epochs
+        print(f"\nt_total is {t_total}\n")
+        optimizer = AdamW(model.parameters(), lr=lr, eps=adam_epsilon)
+        scheduler = WarmupLinearSchedule(optimizer,
+                                        warmup_steps=warmup_steps,
+                                        t_total=t_total)
+    # Define the training loop
+    for epoch in range(num_epochs):
+
+        model, train_loss, train_acc = run_epoch("Train", model, train_loader, optimizer, scheduler, **train_args)
+        _, test_loss, test_acc = run_epoch("Test", model, test_loader, optimizer, scheduler, **test_args)
+
+
+        val_loss = None
+        if DATA_SET_TYPE == 'MultiNLI':
+            _, val_loss, val_acc = run_epoch("Val", model, val_loader, optimizer, scheduler, **train_args)
+            scheduler.step(val_loss)
+
+        if val_loss:
+            print(f'Epoch {epoch + 1}: train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, test_loss={test_loss:.4f}, test_acc={test_acc:.4f}, val_loss={val_loss:.4f}, val_acc={val_acc:.4f}, current_lr={optimizer.param_groups[0]["lr"]}')
+        else:
+            print(f'Epoch {epoch + 1}: train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, test_loss={test_loss:.4f}, test_acc={test_acc:.4f}')
+
+
+
+    if is_save_model:
+        save_model(model, model_name, num_epochs, lr, batch_size, k=k)
+
+    return model
+```
+
+```{python executionInfo={'elapsed': 20, 'status': 'ok', 'timestamp': 1693916821029, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="GBDsGZmpqz9J"}
+def evaluate_model(model, eval_args, dataset=test_dataset, batch_size=BATCH_SIZE):
+
+    test_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+    _, test_loss, test_acc, _, _ = run_epoch("Test", model, test_loader, optimizer=None, scheduler=None, **eval_args)
+
+    print(f'eval_loss={test_loss:.4f}, eval_acc={test_acc:.4f}')
+```
+
+<!-- #region id="rajYNmLzsRgt" -->
+#IMDB dataset Training
+<!-- #endregion -->
+
+<!-- #region id="jvipo7VQEGW8" jp-MarkdownHeadingCollapsed=true -->
+# Normal IMDB Dataset
+<!-- #endregion -->
+
+```{python id="TIlSsqC3ELeb"}
+bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+bert_model = bert_model.to(DEVICE)
+fine_tuned_bert_model = fine_tune(bert_model, *args['bert_tuning'].values())
+```
+
+<!-- #region id="Xn978RlAeOPL" jp-MarkdownHeadingCollapsed=true -->
+## Random Spurious IMDB Dataset (My Bert)
+<!-- #endregion -->
+
+<!-- #region id="UzC6lPebgMJ6" jp-MarkdownHeadingCollapsed=true -->
+### Training Bert on Random Spurious IMDB
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 424}, executionInfo={'elapsed': 557360, 'status': 'ok', 'timestamp': 1690125094627, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="qCR2YJXjtTst", outputId="a1049c92-f152-4fb1-e603-8e82c93c7aed"}
+bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+bert_model = bert_model.to(DEVICE)
+fine_tuned_bert_model = fine_tune(bert_model, *args['bert_tuning'].values())
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 1498, 'status': 'ok', 'timestamp': 1690125605483, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="VGCARcP3S24k", outputId="147faa20-22bf-493b-c8e5-ae17f94e2e53"}
+save_model(model=fine_tuned_bert_model, model_name='fine_tuned_bert_model',
+           epoch=args['bert_tuning']['num_epochs'], lr=args['bert_tuning']['lr'],
+           batch_size=args['bert_tuning']['batch_size'])
+```
+
+<!-- #region id="2SaYPMn0gW_8" jp-MarkdownHeadingCollapsed=true -->
+### Training Rational Transformer On Random Sputious IMDB
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 6212, 'status': 'ok', 'timestamp': 1690647298387, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="EYfI3FlM6wP1", outputId="db832f5d-6544-48f1-ecb4-e194ac0f0d91"}
+# fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+# fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+# fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=RandomSpuriousImdb/max_length=64/fine_tuned_bert/epoch=5_lr=0.0001_batch_size=64.pt'))
+```
+
+```{python id="VoPUWsxNW6Zg"}
+for name, param in fine_tuned_bert_model.named_parameters():
+    param.requires_grad = False
+k = 10
+
+rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=2, k=k).to(DEVICE)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 180}, executionInfo={'elapsed': 165619, 'status': 'ok', 'timestamp': 1690644612587, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="uL25XYvYQBqE", outputId="6a0ad463-550d-4fc9-8d10-081ecd3d4943"}
+fine_tuned_rational_transformer_model = fine_tune(rational_transformer_model, *args['rational_transformer_training'].values(), test_reverse=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 1753, 'status': 'ok', 'timestamp': 1690127199390, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="90XLrSCbXCyU", outputId="0c281dec-4e99-49e3-c5aa-c15f6ca57ef8"}
+save_model(model=fine_tuned_rational_transformer_model, model_name='fine_tuned_rational_transformer_model',
+           epoch=args['rational_transformer_training']['num_epochs'], lr=args['rational_transformer_training']['lr'],
+           batch_size=args['rational_transformer_training']['batch_size'], k=k)
+```
+
+<!-- #region id="fnYUxFPAYtx3" jp-MarkdownHeadingCollapsed=true -->
+### Fine-tuning My Bert on Random Spurious Dataset (Replacing)
+<!-- #endregion -->
+
+```{python id="2ZF65Mr5Y1mh"}
+fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=RandomSpuriousImdb/max_length=64/fine_tuned_bert/epoch=5_lr=0.0001_batch_size=64.pt'))
+k = 10
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=2, k=k).to(DEVICE)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=RandomSpuriousImdb/max_length=64/fine_tuned_rational_transformer_model/epoch=2_lr=1e-06_batch_size=128_k=10.pt'))
+```
+
+```{python id="9gsOAQBpY4G7"}
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 180}, executionInfo={'elapsed': 223343, 'status': 'ok', 'timestamp': 1690648769933, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="IswE3lsLRb7a", outputId="6bf97a79-85c8-4e6f-a0a5-64def544688a"}
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, *args['my_bert_tuning'].values(), train_replace=True, test_not_masking=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 1739, 'status': 'ok', 'timestamp': 1690127947743, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="rd4kKgZ2cPce", outputId="ce7a02d1-5e92-4aa2-886d-b8e8746c35d7"}
+save_model(model=my_bert_model, model_name='my_bert_model',
+           epoch=args['my_bert_tuning']['num_epochs'], lr=args['my_bert_tuning']['lr'],
+           batch_size=args['my_bert_tuning']['batch_size'], k=k)
+```
+
+<!-- #region id="6drXD0Lrfg8F" jp-MarkdownHeadingCollapsed=true -->
+### Fine-tuning My Bert on Random Spurious Dataset (Miss Classified Agumentation)
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 8346, 'status': 'ok', 'timestamp': 1690649278393, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="9SiPDj2pfmOo", outputId="5d0b6297-76af-43aa-954b-1fee96b39c85"}
+fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=RandomSpuriousImdb/max_length=64/fine_tuned_bert/epoch=5_lr=0.0001_batch_size=64.pt'))
+k = 10
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=2, k=k).to(DEVICE)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=RandomSpuriousImdb/max_length=64/fine_tuned_rational_transformer_model/epoch=2_lr=1e-06_batch_size=128_k=10.pt'))
+```
+
+```{python id="SKEINoKZfpQB"}
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 180}, executionInfo={'elapsed': 294192, 'status': 'ok', 'timestamp': 1690649572544, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="CdwHMQjzfraz", outputId="95d05b40-a77a-45f6-9e82-5a9accc3caba"}
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, *args['my_bert_tuning'].values(), train_agument=True, test_not_masking=True)
+```
+
+<!-- #region id="SnC3pK1NgAz7" jp-MarkdownHeadingCollapsed=true -->
+## Random Spurious IMDB Dataset (My Bert Prime)
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 2181, 'status': 'ok', 'timestamp': 1690290409690, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="f6UY0y8OpgMP", outputId="051dae47-42b4-4303-a045-1bc5aa9cd94c"}
+fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=RandomSpuriousImdb/max_length=64/fine_tuned_bert/epoch=5_lr=0.0001_batch_size=64.pt'))
+```
+
+```{python id="s_m39xPYgGqj"}
+k = 20
+
+my_bert_prime_model = MyBertPrime(fine_tuned_bert_model, num_labels=2, k=k).to(DEVICE)
+
+for name, param in my_bert_prime_model.named_parameters():
+    if 'classifier' in name or 'bert_model.pooler' in name or 'attention_mask_predictor' in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 49}, id="CeIStfGjJ85t", outputId="bdb76a76-af17-4ae8-b341-6e36e95eac65"}
+fine_tuned_my_bert_prime_model = fine_tune(my_bert_prime_model, *args['my_bert_prime_tuning'].values(), test_not_masking=True)
+```
+
+```{python colab={'background_save': True, 'base_uri': 'https://localhost:8080/', 'height': 685}, executionInfo={'elapsed': 394489, 'status': 'error', 'timestamp': 1690290338892, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="QRpX2Dc5Eu4A", outputId="d0379010-a1df-40ae-ccd5-0732aff1fd81"}
+fine_tuned_my_bert_prime_model = fine_tune(my_bert_prime_model, *args['my_bert_prime_tuning'].values(), test_not_masking=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 424}, executionInfo={'elapsed': 442526, 'status': 'ok', 'timestamp': 1690286913716, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="uLGpMyIn6Ynv", outputId="c25829b5-af46-400e-eec6-0f60c57014db"}
+fine_tuned_my_bert_prime_model = fine_tune(my_bert_prime_model, *args['my_bert_prime_tuning'].values(), test_not_masking=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 1439, 'status': 'ok', 'timestamp': 1690287069586, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="YLorHjWf8shU", outputId="4860e87b-2d1c-4061-8ff5-0fee5ec60f53"}
+save_model(model=fine_tuned_my_bert_prime_model, model_name='fine_tuned_my_bert_prime_model',
+           epoch=args['my_bert_prime_tuning']['num_epochs'], lr=args['my_bert_prime_tuning']['lr'],
+           batch_size=args['my_bert_prime_tuning']['batch_size'], k=k)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 261}, executionInfo={'elapsed': 264390, 'status': 'ok', 'timestamp': 1690285979676, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="56NxuqkLxRsU", outputId="6e25538e-5e79-49e9-ce8a-481c27e4c0d1"}
+fine_tuned_my_bert_prime_model = fine_tune(my_bert_prime_model, *args['my_bert_prime_tuning'].values(), test_not_masking=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 619, 'status': 'ok', 'timestamp': 1690286244040, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="xjLIMgJ15xo7", outputId="9a17f4a4-0fac-4f3c-c7ea-9082717534f3"}
+save_model(model=fine_tuned_my_bert_prime_model, model_name='fine_tuned_my_bert_prime_model',
+           epoch=args['my_bert_prime_tuning']['num_epochs'], lr=args['my_bert_prime_tuning']['lr'],
+           batch_size=args['my_bert_prime_tuning']['batch_size'], k=k)
+```
+
+<!-- #region id="fzbnwoXn9n89" jp-MarkdownHeadingCollapsed=true -->
+## Random Spurious IMDB Dataset (X-Grad Cam Tuning)
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 7509, 'status': 'ok', 'timestamp': 1690645038640, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="kDYy35ti9tr7", outputId="a22e69e7-96ad-4cc2-c9dc-93e5cef0182e"}
+fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=RandomSpuriousImdb/max_length=64/fine_tuned_bert/epoch=5_lr=0.0001_batch_size=64.pt'))
+```
+
+```{python id="335C1h6FneDt"}
+k = 10
+my_bert_grad_cam_model = MyBert(fine_tuned_bert_model, num_labels=2, k=k).to(DEVICE)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 98}, executionInfo={'elapsed': 551533, 'status': 'ok', 'timestamp': 1690561688995, 'user': {'displayName': 'HamidReza Yaghoubi Araghi', 'userId': '16858751766525091369'}, 'user_tz': -210}, id="EPu4PrL6SZYn", outputId="f2090c9c-394f-44f5-e24e-79660eb9b1bc"}
+fine_tuned_my_bert_grad_cam_model = fine_tune(my_bert_grad_cam_model, *args['my_bert_grad_cam_tuning'].values(), test_not_masking=True, use_grad_cam=True, train_replace=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 4061, 'status': 'ok', 'timestamp': 1690561769898, 'user': {'displayName': 'HamidReza Yaghoubi Araghi', 'userId': '16858751766525091369'}, 'user_tz': -210}, id="5dtmySCWVSfk", outputId="c15dab31-bd1c-4edd-b7b0-eb42cacc442e"}
+save_model(model=fine_tuned_my_bert_grad_cam_model, model_name='fine_tuned_my_bert_grad_cam_model',
+           epoch=args['my_bert_grad_cam_tuning']['num_epochs'], lr=args['my_bert_grad_cam_tuning']['lr'],
+           batch_size=args['my_bert_grad_cam_tuning']['batch_size'])
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 98}, executionInfo={'elapsed': 179497, 'status': 'ok', 'timestamp': 1690645219631, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="VPbyZpCYS-16", outputId="4a28fca8-4ba3-4ad5-dc8f-be7554b9e104"}
+fine_tuned_my_bert_grad_cam_model = fine_tune(my_bert_grad_cam_model, *args['my_bert_grad_cam_tuning'].values(), test_not_masking=True, use_grad_cam=True, train_replace=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 98}, executionInfo={'elapsed': 552467, 'status': 'ok', 'timestamp': 1690560837038, 'user': {'displayName': 'HamidReza Yaghoubi Araghi', 'userId': '16858751766525091369'}, 'user_tz': -210}, id="sEbzcP8OPrfX", outputId="bb1927f9-701f-48e4-b623-0a06805a5019"}
+fine_tuned_my_bert_grad_cam_model = fine_tune(my_bert_grad_cam_model, *args['my_bert_grad_cam_tuning'].values(), test_not_masking=True, use_grad_cam=True, train_replace=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 98}, executionInfo={'elapsed': 554392, 'status': 'ok', 'timestamp': 1690557874946, 'user': {'displayName': 'HamidReza Yaghoubi Araghi', 'userId': '16858751766525091369'}, 'user_tz': -210}, id="yjpDb6vDRrLH", outputId="f3fceea5-6c29-408f-f651-3d83555fea8b"}
+fine_tuned_my_bert_grad_cam_model = fine_tune(my_bert_grad_cam_model, *args['my_bert_grad_cam_tuning'].values(), test_not_masking=True, use_grad_cam=True, train_replace=True)
+```
+
+```{python id="oavnLWunSZUE"}
+
+```
+
+```{python id="slAN7_swSZP1"}
+
+```
+
+```{python id="GwQEXxK4tJWZ"}
+import matplotlib.pyplot as plt
+def plot_grad_cam(tokens, gradients):
+    # Plot the heatmap
+    plt.figure(figsize=(14, 6))
+    text = tokenizer.decode(tokens)
+    if 'hamid' in text:
+        print('hamid')
+    if 'akbar' in text:
+        print('akbar')
+    plt.bar(range(len(tokens)), gradients.cpu(), align='center', tick_label=[tokenizer.decode(int(token)) for token in tokens])
+    plt.xlabel('Tokens')
+    plt.ylabel('Gradient Importance')
+    plt.title('Grad-CAM Importance for each Token')
+    plt.xticks(rotation=90, ha='right')
+    plt.tight_layout()
+    plt.show()
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 49}, executionInfo={'elapsed': 9922, 'status': 'ok', 'timestamp': 1690643748969, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="KFL52Dnn-5QQ", outputId="fd169bc4-15e7-49b2-d32d-3bb21d1d28fd"}
+test_loader = DataLoader(train_dataset, batch_size=10, shuffle=True)
+model = my_bert_grad_cam_model
+model.eval()
+test_loss = 0
+test_acc = 0
+test_preds = []
+test_labels = []
+pbar = tqdm(test_loader)
+for batch_idx, batch in enumerate(pbar):
+    input_ids = batch['input_ids'].to(DEVICE)
+    attention_mask = batch['attention_mask'].to(DEVICE)
+    labels = batch['labels'].to(DEVICE)
+
+    outputs = model(input_ids, attention_mask=attention_mask, labels=labels, use_grad_cam=True, debug=True)
+
+    break
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 12, 'status': 'ok', 'timestamp': 1690643755952, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="SMFNVwMyN2xV", outputId="027ee916-4d15-455e-8b8e-f9317a78d63e"}
+labels
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 1000}, executionInfo={'elapsed': 16605, 'status': 'ok', 'timestamp': 1690386894315, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="dbUrCA-T-5K2", outputId="7ccabe24-272d-4b43-a12b-53882899f0ba"}
+import matplotlib.pyplot as plt
+model = fine_tuned_bert_model
+def compute_grad_cam(input_ids, attention_mask, token_type_ids=None,
+                     position_ids=None, head_mask=None, inputs_embeds=None):
+        # inputs = inputs.to(DEVICE)
+        # if not self.copied_model:
+            # self.copied_model = copy.deepcopy(self.bert_model).to(DEVICE)
+        copied_model = copy.deepcopy(model).to(DEVICE)
+
+        # for name, param in copied_model.named_parameters():
+        #     param.requires_grad = True
+
+        outputs = copied_model(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
+                               position_ids=position_ids, head_mask=head_mask, inputs_embeds=inputs_embeds)
+        logits = outputs['logits']
+
+        # Backpropagate to get the gradients
+        target_class = torch.argmax(logits, dim=1)
+        one_hot = torch.zeros_like(logits).scatter(1, target_class.unsqueeze(1), 1.0)
+        logits.backward(gradient=one_hot, retain_graph=True)
+
+        # Get the gradients for each token in the input text
+        # token_ids = inputs['input_ids']
+        gradients = copied_model.bert_model.embeddings.word_embeddings.weight.grad[input_ids] #shape = [number of text, number of tokens, 768]
+        gradients = torch.mean(gradients, dim=2)  # Aggregate gradients across layers   shape = [number of text, number of tokens]
+
+        return gradients
+
+# Example usage
+# input_text = ["This movie hamid was not great", "This movie was not great"]
+# inputs = tokenizer(input_text, return_tensors="pt", truncation=True, padding=True)
+# inputs = batch
+gradients = compute_grad_cam(input_ids, attention_mask)
+for input, grad in zip(input_ids, gradients):
+    plot_grad_cam(input, grad)
+
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 1000}, executionInfo={'elapsed': 13490, 'status': 'ok', 'timestamp': 1690387009369, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="X1EPyfMd5zD8", outputId="1db4034d-71d2-4a8b-f151-a3258ced988f"}
+gradients = compute_grad_cam(input_ids, attention_mask)
+gradients = abs(gradients)
+for input, grad in zip(input_ids, gradients):
+    plot_grad_cam(input, grad)
+
+```
+
+<!-- #region id="xPUeAnoXJPvp" jp-MarkdownHeadingCollapsed=true -->
+## Chunk Spurious IMDB Dataset (My Bert)
+<!-- #endregion -->
+
+<!-- #region id="Zy2dlqA8J0Gk" jp-MarkdownHeadingCollapsed=true -->
+### Training Bert on Chunk Spurious IMDB
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 424}, executionInfo={'elapsed': 1607695, 'status': 'ok', 'timestamp': 1690577225907, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="lJOxspDtJ0Gm", outputId="7a68c249-9f21-447e-8b10-0fa01e7b2e38"}
+bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+bert_model = bert_model.to(DEVICE)
+fine_tuned_bert_model = fine_tune(bert_model, *args['bert_tuning'].values())
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 2491, 'status': 'ok', 'timestamp': 1690577228362, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="gLZGOisrJ0Gn", outputId="56b566db-7075-4a82-d31d-7eb3b03c9843"}
+save_model(model=fine_tuned_bert_model, model_name='fine_tuned_bert_model',
+           epoch=args['bert_tuning']['num_epochs'], lr=args['bert_tuning']['lr'],
+           batch_size=args['bert_tuning']['batch_size'])
+```
+
+<!-- #region id="JBeDXWCJJ0Go" jp-MarkdownHeadingCollapsed=true -->
+### Training Rational Transformer On Chunk Sputious IMDB
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 2945, 'status': 'ok', 'timestamp': 1690542666165, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="rwH5w7DQJ0Gp", outputId="41bbfab0-eafe-4e8d-e4da-c65bd027adb4"}
+# fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+# fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+# fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=ChunkSpuriousImdb/max_length=64/fine_tuned_bert_model/epoch=5_lr=0.0001_batch_size=64.pt'))
+```
+
+```{python id="FL1wgobZJ0Gq"}
+for name, param in fine_tuned_bert_model.named_parameters():
+    param.requires_grad = False
+k = 10
+
+rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=2, k=k).to(DEVICE)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 180}, executionInfo={'elapsed': 470323, 'status': 'ok', 'timestamp': 1690577817303, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="c5Z-cuWcQjtt", outputId="c2e535ca-dca3-4655-8981-1d8575ab2038"}
+fine_tuned_rational_transformer_model = fine_tune(rational_transformer_model, *args['rational_transformer_training'].values(), test_reverse=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 2250, 'status': 'ok', 'timestamp': 1690577834465, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="R-Rn5V4BQlS7", outputId="9a3dc23e-a82e-4cea-9741-09bb8c2e40b9"}
+save_model(model=fine_tuned_rational_transformer_model, model_name='fine_tuned_rational_transformer_model',
+           epoch=args['rational_transformer_training']['num_epochs'], lr=args['rational_transformer_training']['lr'],
+           batch_size=args['rational_transformer_training']['batch_size'], k=k)
+```
+
+<!-- #region id="62r76UhGJ0Gs" jp-MarkdownHeadingCollapsed=true -->
+### Fine-tuning My Bert on Chunk Spurious Dataset
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 4250, 'status': 'ok', 'timestamp': 1690578560942, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="eo2tHBNhJ0Gt", outputId="4161dd27-4a59-4571-f158-8b40bb7ec96a"}
+fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=ChunkSpuriousImdb/max_length=64/fine_tuned_bert_model/epoch=5_lr=0.0001_batch_size=64.pt'))
+k = 10
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=2, k=k).to(DEVICE)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=ChunkSpuriousImdb/max_length=64/fine_tuned_rational_transformer_model/epoch=2_lr=1e-06_batch_size=128_k=10.pt'))
+```
+
+```{python id="JbOiComcJ0Gu"}
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 180}, executionInfo={'elapsed': 635714, 'status': 'ok', 'timestamp': 1690578504306, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="o-oNaTnBQns8", outputId="670d6252-977f-4798-9f60-cc384881afac"}
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, *args['my_bert_tuning'].values(), train_replace=True, test_not_masking=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 980, 'status': 'ok', 'timestamp': 1690578505282, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="67My2W1GQovD", outputId="a4a87b78-0e3b-4449-c17a-cd1c991daff4"}
+save_model(model=my_bert_model, model_name='my_bert_model',
+           epoch=args['my_bert_tuning']['num_epochs'], lr=args['my_bert_tuning']['lr'],
+           batch_size=args['my_bert_tuning']['batch_size'], k=k)
+```
+
+<!-- #region id="_t_uRh0XVfOi" jp-MarkdownHeadingCollapsed=true -->
+## Chunk Spurious IMDB Dataset (X-Grad Cam Tuning)
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 7225, 'status': 'ok', 'timestamp': 1690580935901, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="mjLbN_kpVfOu", outputId="8eaeabb8-55c9-437c-c153-e34c1345ba3a"}
+fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=ChunkSpuriousImdb/max_length=64/fine_tuned_bert_model/epoch=5_lr=0.0001_batch_size=64.pt'))
+```
+
+```{python id="UumJzpjcVfOv"}
+k = 10
+my_bert_grad_cam_model = MyBert(fine_tuned_bert_model, num_labels=2, k=k).to(DEVICE)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 98}, executionInfo={'elapsed': 538527, 'status': 'ok', 'timestamp': 1690579240669, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="B26C421zVfOv", outputId="b7e6a2d7-7251-4189-e343-71347db2670d"}
+fine_tuned_my_bert_grad_cam_model = fine_tune(my_bert_grad_cam_model, *args['my_bert_grad_cam_tuning'].values(), test_not_masking=True, use_grad_cam=True, train_replace=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 6877, 'status': 'ok', 'timestamp': 1690579247519, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="O7WngQuIVfOv", outputId="f68b0fa5-961f-40f1-f840-47e6d395f311"}
+save_model(model=fine_tuned_my_bert_grad_cam_model, model_name='fine_tuned_my_bert_grad_cam_model',
+           epoch=args['my_bert_grad_cam_tuning']['num_epochs'], lr=args['my_bert_grad_cam_tuning']['lr'],
+           batch_size=args['my_bert_grad_cam_tuning']['batch_size'])
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 98}, executionInfo={'elapsed': 542146, 'status': 'ok', 'timestamp': 1690580572191, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="HyXtZN0PVfOw", outputId="4959b649-2961-466e-a3db-7e00a952131c"}
+fine_tuned_my_bert_grad_cam_model = fine_tune(my_bert_grad_cam_model, *args['my_bert_grad_cam_tuning'].values(), test_not_masking=True, use_grad_cam=True, train_replace=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 98}, executionInfo={'elapsed': 537731, 'status': 'ok', 'timestamp': 1690581474919, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="28WKKvZrVfOv", outputId="76e14f47-0e25-4591-dfc5-c7a33e762ca9"}
+fine_tuned_my_bert_grad_cam_model = fine_tune(my_bert_grad_cam_model, *args['my_bert_grad_cam_tuning'].values(), test_not_masking=True, use_grad_cam=True, train_replace=True)
+```
+
+<!-- #region id="G5svWxkcsXc5" -->
+#MultiNLI Training
+<!-- #endregion -->
+
+<!-- #region id="vDcvbiOiftyG" -->
+# MultiNLI Dataset (My Bert)
+<!-- #endregion -->
+
+<!-- #region id="HNUCR8IZgEj4" -->
+### Training Bert on MultiNLI
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 1000, 'referenced_widgets': ['8a109d846db745e696a62442ca6c9765', '1cb5ff683f4249ea8a118fd9db4c64a2', 'c7886dfffd574d98ad3707522496a187', '3c8533f10cfd413a835ba67e74bc3414', '4b761f4b88ea47c6a9827f8d86a4e8bf', '000d3e0d2d164287bf87959e64df8683', '9a5b513790d54c61a66e77cddf6ae19f', '10fd5343627d47af995a2f37f11bd2e5', '65c35d927b1a45129b4249d68e399ba8', '2e3ebb10455f46888398c8bbb134db57', '90c17ccb0e3e445cb42b4800a88863aa', 'ff890794b9fc403f96edee8927243554', 'b8b9595a779d45038405cfde9993e1d8', '83b04111563141c3a789106a502e9a88', '5dddf5898165443b9e45f6a88bfff657', 'e4f038ec532f436b8bb2ad60a17113ef', '197d6282689640b9aba78408d7327c7b', 'cc648bc1669f4e439fa6d82a36fdef69', 'ec0160b5a8724563b0b8820e9374c8d8', 'b6e0d1c6c2f74043b7e6cd092937abe1', 'ae8ae4e0676440bb83c9456f33a7c161', '32d23c94040d475d918b18347fe56a05', '0448b5aa075f4d6cbebf1a016b28aaf3', '7179ae633b8545c6824c17a24f8dcfb3', '8de4f354b67d4e8096c1be3cd8ec8ebc', '301a13d0f8d344fc8223595e48f58a0a', '555ca4d19a724256a0345dffecaef199', 'e246cd5cf7814fe2b34ad8f3d87f3c72', '4cded4b453f64299a7a4629d2d549b86', '83db33ec5fe74943bf46321b490c400f', '2010ff33d6154c21b8e04752f803ac14', '08d0ce63a13f4764815d2b6a26b19940', '7aeb212ed9f645e6af080a6a586d646d', '2f9f7d2e91b541c695f20250293dfe68', '0e4d58af33234aceabc76212d6c4ac1f', '08da78848cf84c478197d308cee51332', 'd15185a2b5ad46a2b76b202669ff7b31', '91f3d605365140678a6c883f8cc6b83e', 'd69ef934ecd940259af783cf2086777b', '142a7fe36e314ca885a07c49b74a748d', 'd72cf031a99940b4a1f6301a0f882ff9', '283a8558b03e499ea4d60ce0d1bdb688', 'f770bcd405774916a81e7d470b417c40', '3d5368cc60de446a9a806a19b2e57ac0', '7d81034373204d1dbbb94d1a428125a6', '459e28ecb6f24ac6a0c4236aa11d0e11', '64792cdb5e3b4f1ba70d0685d2f2b9e7', 'f2525443a87c408eae850af4e13c923e', 'a291c5c398b343beb62f03622ca57068', '94d446553c674a08b4bd478e61ade56a', 'fc7fbe7dcc1b4f7cae2a1f057b60d2fe', '1e09a90162494925ae740c7d09cf46d6', '166aee87a08b45fa8f1fd67aa5e7f89c', '98cc9a6946e14015a8ea94613222e0bb', '8bb32c848e2b4a58943029b5a0cb9c6a', '608d538dee604f409f3ae472e8945c62', 'b03560e906224a9eb7621a7fb82c3aeb', '49c9e69009fd4bceb6775b5098332575', 'feeaf57f296d44b2a3cd2f560c624ef9', '4b54b91d0aa844c4a937c58f1c0f8978', '13b53b6c75294d05b4a4753bc287cf44', 'ad87e989685f454b80e84647cbf6d044', 'ef42b1e8dd414f1b9ee36698b88b375e', '917c9dcf1a9a4adc96c1190ea811b15c', 'f8d2fa4a01af4b6e931c745d6188ae0f', 'f567b6deb9de4d7a86d13933b6c0cc8c', 'd1c043a49408495f9cdd59c283a4ff45', '907555c626ff4bf99495dacd07135a0e', '32330df3fd4a4880922d4ec7305c25c5', '2ac4f09b4b644574b665c6ec987613a6', '841b173a8ad84b84958a75c11fc766bc', '1d0f17298e4d4692a0481d100cd5a0e8', '0f96172c117c47c4869204c83fbc050f', 'ca9e987b5bba49c08d5df7511fe4856f', '28bfe5e8deef4ebb84d8196e998b3ca3', '7dd9c58feafe4574b01c61883c4e00fd', '68abc9cf19a748fcb36ebe2a2144262b', 'd43b19dcc7f64b4a952c67f0453aadd4', 'c6a6e28554454c08b35d866f5df24d1b', '63192cc42dc9432b8a7c6894b5a0afb6', '2fdba8b00d164abb881c3b75e275544a', '56a48219e311466083d2fbd7589c4453', 'e578741e0f73403c9654d42bc56093e9', '4fb6985460624496bdea9fbe090f83f5', 'ce900ecf2d854308a624ea078b007d63', 'a6b23f8ec3fa4b09ae265a6b55a31a26', '3405f47f36ae4f4389f330c8b11efc81', 'f19ff63dd9414a899f484e78dd511262', '391f9170ae5a4da188d8ed560e3e9e74', '1d4e8aae6b11470ea0ebbd3db8fe4071', '3dea0fefcc4e427588eefc0aade423b3', 'cc3a1722f7ad41918a675dee3887680e', 'e448abb73bb54fd39701aabad024fc49', '41d7d0f8472749a59f1f967c4cdd57cd', '9dae1c544974431fad81f783bb81cded', '2631604f08da47a29b0c87be0f5097fe', '32b1c0d7d41f430fb5321ca6bf9f5bc4', '17615157e36a42748e72000f6c24af38', '5d9f3d1f9b674d368145803f7e5f0190']}, executionInfo={'elapsed': 9850990, 'status': 'ok', 'timestamp': 1693863995518, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '17115744166251793158'}, 'user_tz': -210}, id="nMnG0c-XkMWf", outputId="3de4d580-0d68-42cd-e510-131708dcb403"}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+bert_model = bert_model.to(DEVICE)
+fine_tuned_bert_model = fine_tune(bert_model, train_args, test_args, *args['bert_tuning'].values(), is_save_model=True, model_name='fine_tuned_bert_model')
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 750, 'referenced_widgets': ['a7e165aa1a5b497795504f9ff248a9e0', '35a257d69d46462c9fe91f3db583961d', 'd5c21296b65f40a8a0fdd0d309e3c30a', '5b03f8bba4b4460493550c3afb721fbc', 'a014dae141a7431e8bbcbae80efe552a', 'a5b8cc9fee2f49f18a603dbaec54b625', 'c8f2411ceb654b7793a338e0ba5e62bc', '8824b38a6ae2495eb1683d885e02d150', 'a6e6ba346a874680a9620ef8d326c9da', 'f50ba01bf5c94163a001a85f375927c0', 'e426f5313375406f92d16575b6b9cfed', 'bdca5b752eab4cfabd091ec41356ee94', '835dbfea16994ab98a9909a04686a4bf', '66ac1e230f1d45dfaece65cf3bd91c01', '757c46e436724627930ee81be8cff5f8', 'ddf5db24c8c540009acabd0891020902', '7ae0dd8aed2348a39f555f8e3f5dbddf', '9c0cd682d62b4e0693b7b3417eba252f', '5f1ae1994b7b4bcb8b252bf8ae56316c', 'cc87fbba946740e790e1e031646bf9a1', '5955c310aa0a43bdbfcc67dd6ce0c5d9', '4af60ffb29744186a32814bc5fec52b7', 'c0055dd6a84f40239a3c6a2481e227e7', '4edfbb7ae41a44eea6e346cfa508055b', 'e6ed966677084e3eaee42fe02699ad21', '6502bd86db5f451685f791e90a13f10e', '579f98f9258b439e8502b5fd5e7b738f', 'f828bf2771ad408799ca7ad912d84898', 'eaa12a2b177542b099ea41946af89964', 'dd72eb0cfef74259883858fcb2c989d4', '2606782991924f5da67118837f9e570c', 'dfb46b7348e7442cb6fae4b443e33870', '1111a2fb8dd94d7db71d8ace57945ba5', '44be423d46104065941428ad77807bca', '191269f339a445f3bbea93366f46e835', '88216de309694994a7b8e035cb3b7abb', 'e0b790bb34ae4b299872727b1c7c6d21', 'ef6310ea80544f27b7eaad0fbd371c96', '7a043613285a4e39a16d2fc59113ad12', 'a43fce2ed2464d64b2f9b637576c9d7d', '1ab0f582e1524d7b9f2cff9280fd2ffb', '17155034399c496287e5224edfb6a1ff', '7d86b78fe000472ab4b28361148ed3ff', '99a6f7bfe6af48e1ab45720ff64bf603', 'f0a0846d99cc45eab43d3fb0b6b3a059', '4c1140ecee264747925eef5e4c05621e', 'b5bc229670ec4e24a4b9b2e118e4b038', 'e46d2b8fea6d454ebfe762ed82fb8e96', '6f629af83cff4214aab5d369aa96fc37', '46873b15aec14c15a776007a3de2e221', 'f89985e66cb54fa79befb70d5bce59a5', '570455d4c7ae445495f066d2178aeb0d', '6ab8f74473954275b0b681ed05e4bbbc', '87d1591e649f4b0dbf3f5577394d5d92', '43a9f1edce844d548335b5fb447c9c4a', '36e6d11d07d84994a92d0b1e0ac0faaa', '7c7b2d3c834742ffb5dcb3c4384b9f4d', 'e87fbd6a71e8402d9d5b6320732737b7', '74972d5e6d0a4fd988e61648ba29118c', '1318689c551647ac8cc14d71d6b14256', 'b9bb4d6a474143c3bb23b1610f41cbdb', '0849a6c147a148e5b1a9b1d4b4a1e3ae', 'e5c1b5cc4ac74c589901a0253cf308a3', '641934ab58394428a545e56f68d7d156', '761daa18b74149a9a9950c93ecab6a3f', '0414bf6a3d4a454788f41901d55f1b8b']}, executionInfo={'elapsed': 6995926, 'status': 'ok', 'timestamp': 1693913746657, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="k_Yyr-w4MHHT", outputId="b7e60997-5c41-45cc-b22f-a51910afb1f6"}
+pre_fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+pre_fine_tuned_bert_model = pre_fine_tuned_bert_model.to(DEVICE)
+pre_fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=3_lr=2e-05_batch_size=32.pt'))
+
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+pre_fine_tuned_bert_model = pre_fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model = fine_tune(pre_fine_tuned_bert_model, train_args, test_args, *args['bert_tuning'].values(), is_save_model=True, model_name='fine_tuned_bert_model_5')
+```
+
+<!-- #region id="zxyN4OGJdHdL" -->
+### Training Rational Transformer On MultiNLI
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 463, 'referenced_widgets': ['fbcbc9824e0c4bb3b034104e01f1cec1', '8ee9d29ae7754956bd4eecdac4a13fbf', 'e9fa39fe27024390960d1567d8b5344f', '39e30e62cefd4ef88790109f92e30ecb', 'e8445530c33e4585adb1d003eff9d825', '1aec2344685e441a9cab3e2234ecccb8', '6e8d9fd86d2648bf9e29d927920ce281', '327db125e92e4da8b4e31e1a2edbf79e', '5f94addf4cc2419290e06227f619cf0c', 'afc618bbd9b545f389ea0ff4909f23b5', 'f42205dd0e4e4127a15cf38fc78b56e1', '5efd5a8550d94b72bd6245f44d0eeb1a', '58e1339c2f45422bb6ca90cbf8d0fd59', '818cd053a7f149308b13cdfbe5b49a29', 'd756228131ef4efbaaf3ee53901102bd', '78b27a10264e4c009f30700e0390bbfa', '64383610f3964a74a14791b2f8a6e13f', '541f1632af7b4a4ca348ad150a0b1427', 'c5b7d178f66f4a28bbd23150785f968d', '3128d9bb1b9f408cb7375ad90f9cc0cb', 'c4ed0d5201ef497db1b698f9c9c16090', '3013d290986e4bdc9f75bb1e9302244e', '90e0772196e0403fbf420a6f9ea2f239', 'c27b5eede48a4012bf2f85f1fe4af227', 'bedb817abb8e4d8ca6b3bec8a88be7de', 'ce9f2e63e0db44948d1dfbbdc4c7226f', '05f88bf33d0140e9a28fc5d835a08000', 'cab7a51714b7434e94e5d88ee4762011', 'e301d050742944ec9f909072446f2b57', '1d6b18058c3842f7bbba8330847f1be3', '204c850df8384d218faeee3ea42103c1', '1a7ff0ecadfa4d258158e35db05d94b5', 'b88750dd450d47859e197b571ff91ee3']}, executionInfo={'elapsed': 2544977, 'status': 'ok', 'timestamp': 1693916552090, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="dwAoVZqmleue", outputId="de6ac066-2d31-4263-fe6e-2f320640a388"}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': True,
+    'test_not_masking': False,
+}
+
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_5/epoch=2_lr=2e-05_batch_size=32.pt'))
+
+for name, param in fine_tuned_bert_model.named_parameters():
+    param.requires_grad = False
+k = 7
+
+rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
+fine_tuned_rational_transformer_model = fine_tune(rational_transformer_model, train_args, test_args, *args['rational_transformer_training'].values())
+
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 2660, 'status': 'ok', 'timestamp': 1693916554746, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="-6UL6_Fw-q0g", outputId="4d6d2fb8-eb53-4d10-c77f-9248fdb33562"}
+save_model(model=fine_tuned_rational_transformer_model, model_name='fine_tuned_rational_transformer_model_epoch=5_wga_erm=63.85',
+           epoch=args['rational_transformer_training']['num_epochs'], lr=args['rational_transformer_training']['lr'],
+           batch_size=args['rational_transformer_training']['batch_size'], k=k)
+```
+
+<!-- #region id="c4gXvz7K3r8n" -->
+### Fine-tuning My Bert on MultiNLI
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 715, 'referenced_widgets': ['5c8e3e557ff14da5b521b1aa98d471fe', '8e4ff8c4522c4959baa7483ac096d69e', '8423202d8d3746f39d2da22cc32c37ec', '3335f000a3fd443db0f2b2591cf916d7', '11f40a6c5db24f088168be690110cb5d', 'cf1c91eae6f44d76bb8c253235c84020', '525b128c52734ffcb23e82296b630f6c', 'd8c634e80fe84855ad80d9d7c022044e', '7a87690095614cd6ba80942e0b6c68e5', 'fdd8e8a97c7b40a69d444d338c4858e2', '9334dd204a1643418944f22d11afc601', 'bb425bc4707b4595b7478dc7b7b96906', '3cbcfd2c2f0048d89eb4c8e89bef2705', '0b366898962b404ea8ace6e406ec32e5', 'f013e920d6b54fe0a96ddb7f702f27c1', 'a52256f77f6141f7ab14ad81d00bb2d0', 'ca07923613884100b7c45878f3046c90', '9c781129de8946d8b7f63dcd30163706', '2cca4e01d5704826ae87ba26cbb14906', '5d0a74b52f90402d880d5c5934def39d', '950b9c28e7c2436dbef8e6bfbe5f7ae6', '1ba4330081424ae7a95843898ee1b285', 'bd806eaf30454fcdadaaf3896f6048f8', '50669b7dfc13492295b5ff2b97a3f6eb', '26b0d7a9e4844c22bf0149970a39a4fa', '1be627af338b4c588e5e16e179b4f4ed', 'f34b8d52a473419b9cf3a3aaa2fc1f11', 'bb1bf8450a2f4526a60f93c5964c3643', '02b5370fec1146e2b1d3fee7970fe091', '0dcd2f48a77044dc9bdd4190ba197a39', 'f9558a5af0be426ab61ee3c7f28d2db7', '609654a3894643c7af16d92e01a057c8', '6894c3441dd1432ebe28d8473b24043a', '8cfa3472a75f48ccb8dc0915675b162f', 'd232b273296140d7a81b01111f19c1a7', '1535710c0e904360b2ed9918568662e2', 'a7f945d65c6d48849f2f912e2c00eb37', '744897c1f2b04152b28c13a312ecc640', '6b9a4e59bcb842e196a7ec6963e2cab7', 'ad43eb5e081f4f19804bdbc4d875fb7b', '0a3dd04d538c4876b91ac752b848d5bf', '1f1c6fec676649648f4dca6e30f8333b', 'c8ea6478350b4491ab7a0c0b610bf781', '53ff3f2a8432497aa8c6194d6978b816', 'd1281ad5d9a741c3a0381a00d7ab41f5', 'b74d665ff20c47eb854f4ede07fc8fa5', 'f60f3bf0296a48ac8cd4162782181b1c', 'e79ce06a05714f50b3b677fcd90c5920', '46a6977c47df43c8bc4f4e8cd8db31d7', '975248f755e24fc0af8f767d3d3c4cb9', 'fd71ac2bbe53492db9e1ec62e659ae17', '185a436ebe7a4cf99ba2dbb7d697c46f', 'f7095060d8934d13ab2365f4aa48802a', '667186704ff94f77874a4c066fb977ac', 'cee3d935c0294209954b76b2897a26d9', '9b0ccd79b88d4420849262537785d614', '80f6776c43824388b0f8a81a92a6ebd8', '60505bb74fa74d3fb6636a2e0efcb12c', 'de573895eb0647fc95ec1e3caae8c037', 'e35dd834c0b347b5a8bbc72c3fff4153', '6abd574cf5b948948c0ff9bc2f779c00', 'ef2bebcb88574fa9a9d2c98e566e0ae3', '05e29f4936e84ec4974593f40739f1b9', '16c9c5ef83504ae5b6b7bdc23bcf52da', 'b57a935b831b4d0191426e715b26a904', 'c0765841f70e4e63b8895474309e212a']}, executionInfo={'elapsed': 7081286, 'status': 'ok', 'timestamp': 1693923904253, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="10HjCExbGfB-", outputId="d4a4f2c6-e400-40d8-a94a-0ca7650725ca"}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': True,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': True,
+}
+
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_5/epoch=2_lr=2e-05_batch_size=32.pt'))
+k = 7
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=5_wga_erm=63.85/epoch=1_lr=1e-06_batch_size=128_k=7.pt'))
+
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values())
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, id="ax3cPXtRutYK", outputId="62049b8a-844d-4a4f-a69a-064dae44d042"}
+save_model(model=my_bert_model, model_name='my_bert_model',
+           epoch=args['my_bert_tuning']['num_epochs'], lr=args['my_bert_tuning']['lr'],
+           batch_size=args['my_bert_tuning']['batch_size'], k=k)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 373, 'referenced_widgets': ['850ae0f319784462bb7281fd3bf5bc02', 'ee71ecb41eea42dfad390a73a6f6e172', 'fe3f3a522f454f75bf33fefca6c8c103', '256a3198f8ee42139ffecef5446189e7', '0506a96d40f145cea490a0a8bd1186e1', '9e55128ef77647d38285e3161fe37d8e', '999cb525361a4d1ba2c318b969e8d035', 'b366ed576b64467d9370c492e8a85719', '62c400fa72854f74846be971d623ed41', '480ba5d426314e11936a07253b5ffd20', '1584f438db7f48649206c89b81248ca7', '8215c012836a48e580cc337a03f512ff', '090af32c21d548c294734a5505be9edb', '1e6c6b3e5c104269b16b8b9f73e81f45', '687dd3f26e4b4647ab4b4b3ea5d119e7', 'cf078ed160c940d79bbe0094b1edb8b0', '67cb798cae3449418042726b00c90ad1', 'e359d5a1f533405ea1b90298d6813e49', 'ac6400d993b640b396846e903cb050cf', 'e1280d97c4564d228b20d1acdc3345fb', '85f63f9362964e64bd6f7f0e9c650390', '25ddd30eb16743a096f735b9b2254278', 'ce7399a9d16b46eaa6efffcd6a549ad8', '7f6bd3adf1be40b2928ef7c858ec075a', '893167f97c83449b83536a11b2a75b2d', '8ef1497a982248b596d7cf7d62dfa2f1', '602c81bb0f37488ebd897afa50da9e80', 'f3b913989da1449797ebfed5ed58365d', '7f8ee5f897764c5692e7d242dda4b3bc', '7cd50c9b71d3492f8fe9aa053da09c78', '15432c3c5a9f41cc9a5c67066d76b5fe', 'e2a29a096b8a45d8bd6b98364f42335f', 'e4f80fb56d694ea88a787a2c630399f1', '1616149eeec846dab9478796f07a3ea7', '13f6c957f6e342d3962e8e6e0c99a5d9', '59c5688a6bda4690a4cf731b3bc61926', 'a096736fb3b4412fae9128693eb02bd3', '81521a8ed8e2442b8e33fdae58f06525', '759bbd4fea7e4220b5e57301571f425a', '47dc2c18a042466296c0ff07caf926d0', 'f7f0f13a1b11476582a1815aaf7f8a9b', '8b7080761dad423ab84292e3ec714bb1', '111127fc1c3e4aa99c07659dc8c88687', '1ba949eb55f44815b8d8d2df403b7a92']}, executionInfo={'elapsed': 5021667, 'status': 'ok', 'timestamp': 1693512769379, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '17115744166251793158'}, 'user_tz': -210}, id="rahVbjhJ1Deg", outputId="d87f7e08-beeb-4446-dd11-4f8de8af7771"}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': True,
+    'rational_augmentation': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'test_reverse': False,
+    'test_not_masking': True,
+}
+
+fine_tuned_bert_model = Bert(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
+k = 7
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model/epoch=1_lr=1e-06_batch_size=128_k=7.pt'))
+
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values())
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 5231, 'status': 'ok', 'timestamp': 1693512811623, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '17115744166251793158'}, 'user_tz': -210}, id="TFFyuPdAK_29", outputId="3abcbfe3-b9f8-41a5-9fe8-402ddda5c40e"}
+save_model(model=my_bert_model, model_name='my_bert_model',
+           epoch=args['my_bert_tuning']['num_epochs'], lr=args['my_bert_tuning']['lr'],
+           batch_size=args['my_bert_tuning']['batch_size'], k=k)
+```
+
+<!-- #region id="8RdbqszW0qY3" -->
+### Evaluations
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 376}, executionInfo={'elapsed': 1121133, 'status': 'ok', 'timestamp': 1692552956045, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="ruYwXJWk0t6U", outputId="1e9043c5-c3d5-4c1c-db6c-87023ad9fc3f"}
+eval_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'test_reverse': False,
+    'test_not_masking': True,
+}
+
+fine_tuned_bert_model = Bert(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
+
+print("Fine-Tuned Bert Result:")
+print("Train:")
+evaluate_model(fine_tuned_bert_model, eval_args, dataset=train_dataset, batch_size=128)
+print("Test:")
+evaluate_model(fine_tuned_bert_model, eval_args, dataset=test_dataset, batch_size=128)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 205}, executionInfo={'elapsed': 431887, 'status': 'ok', 'timestamp': 1693514622445, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '17115744166251793158'}, 'user_tz': -210}, id="k7iVcT6JSCH0", outputId="b3051ab2-49e2-4298-9f2a-a82014f79684"}
+eval_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'test_reverse': False,
+    'test_not_masking': True,
+}
+
+fine_tuned_bert_model = Bert(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
+k = 7
+my_bert_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
+my_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/my_bert_model/epoch=2_lr=2e-05_batch_size=32_k=7.pt'))
+
+print("My Bert (Rational Replacing) Result:")
+print("Test:")
+evaluate_model(my_bert_model, eval_args, dataset=test_dataset, batch_size=128,)
+```
+
+<!-- #region id="o02Cuke8Qyil" jp-MarkdownHeadingCollapsed=true -->
+# Civil Comments Training
+<!-- #endregion -->
+
+<!-- #region id="uQAF5DYdmQVQ" -->
+## JTT Civil Comments Dataset (My Bert)
+<!-- #endregion -->
+
+<!-- #region id="fe30alc5mQVR" jp-MarkdownHeadingCollapsed=true -->
+### Training Bert on JTT Civil Comments
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 17, 'status': 'ok', 'timestamp': 1692357608316, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="wtB564ouX0f6", outputId="c3ea3c0c-b169-45a5-b873-f092db820def"}
+bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+bert_model = bert_model.to(DEVICE)
+fine_tuned_bert_model = fine_tune(bert_model, *args['bert_tuning'].values())
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 17, 'status': 'ok', 'timestamp': 1692357550329, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="Qj9GsjjaXmX8", outputId="bbec8aca-c424-43e2-8213-1be87739cb0e"}
+save_model(model=bert_model, model_name='fine_tuned_bert_model',
+           epoch=args['bert_tuning']['num_epochs'], lr=args['bert_tuning']['lr'],
+           batch_size=args['bert_tuning']['batch_size'])
+```
+
+<!-- #region id="a-mzfZS3mQVW" jp-MarkdownHeadingCollapsed=true -->
+### Training Rational Transformer On JTT Civil Comments
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 9, 'status': 'ok', 'timestamp': 1692358142579, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="Uf7z23SSZ985", outputId="0af746f2-40f4-4010-9906-9656579c9687"}
+fine_tuned_bert_model
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 349}, executionInfo={'elapsed': 26, 'status': 'error', 'timestamp': 1692358000467, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="GU74X5ohmQVX", outputId="ee2256d7-6229-49ec-fedb-f6f5e0ef344a"}
+fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=JTTCivilComments/max_length=128/fine_tuned_bert_model/epoch=3_lr=2e-05_batch_size=32.pt'))
+```
+
+```{python id="8yCJivhwmQVY"}
+for name, param in fine_tuned_bert_model.named_parameters():
+    param.requires_grad = False
+k = 7
+
+rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
+```
+
+```{python colab={'background_save': True, 'base_uri': 'https://localhost:8080/', 'height': 237}, executionInfo={'elapsed': 1676421, 'status': 'ok', 'timestamp': 1691346001685, 'user': {'displayName': 'HamidReza Yaghoubi Araghi', 'userId': '16858751766525091369'}, 'user_tz': -210}, id="oB5OyL_-mQVY", outputId="ab8274b3-8585-4c1b-e8d8-2a0ef366713c"}
+fine_tuned_rational_transformer_model = fine_tune(rational_transformer_model, *args['rational_transformer_training'].values(), test_reverse=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 5098, 'status': 'ok', 'timestamp': 1691346006779, 'user': {'displayName': 'HamidReza Yaghoubi Araghi', 'userId': '16858751766525091369'}, 'user_tz': -210}, id="7GsYcL5-mQVZ", outputId="c4eed745-19ef-4710-c8a6-a40eed548f72"}
+save_model(model=fine_tuned_rational_transformer_model, model_name='fine_tuned_rational_transformer_model',
+           epoch=args['rational_transformer_training']['num_epochs'], lr=args['rational_transformer_training']['lr'],
+           batch_size=args['rational_transformer_training']['batch_size'], k=k)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 98}, executionInfo={'elapsed': 1735369, 'status': 'ok', 'timestamp': 1691258614496, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="Gv9Thw-PmQVa", outputId="4d0abf57-848a-47e5-c8d7-eee3fd0f72fa"}
+fine_tuned_rational_transformer_model = fine_tune(rational_transformer_model, *args['rational_transformer_training'].values(), test_reverse=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 5742, 'status': 'ok', 'timestamp': 1691258620200, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="31NsPKlKmQVb", outputId="f7d9d5f5-6e41-4e55-994e-9c4c1ff95009"}
+save_model(model=fine_tuned_rational_transformer_model, model_name='fine_tuned_rational_transformer_model',
+           epoch=args['rational_transformer_training']['num_epochs'], lr=args['rational_transformer_training']['lr'],
+           batch_size=args['rational_transformer_training']['batch_size'], k=k)
+```
+
+<!-- #region id="BhoO5xXFmQVc" jp-MarkdownHeadingCollapsed=true -->
+### Fine-tuning My Bert on JTT Civil Comments
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 66}, executionInfo={'elapsed': 40206, 'status': 'ok', 'timestamp': 1691940750259, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="K7aacxT_mQVd", outputId="de70d52d-e87b-4ab3-d194-9d1461560f12"}
+fine_tuned_bert_model = Bert(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=GDROMultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
+k = 7
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=GDROMultiNLI/max_length=64/fine_tuned_rational_transformer_model/epoch=1_lr=1e-06_batch_size=128_k=7.pt'))
+```
+
+```{python id="B2e6rEHSmQVe"}
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 387}, executionInfo={'elapsed': 6730, 'status': 'error', 'timestamp': 1691940765181, 'user': {'displayName': 'HamidReza Yaghoubi', 'userId': '02734612338194496039'}, 'user_tz': -210}, id="TqRTitMjmQVf", outputId="36be08df-a2d8-4c99-aee6-725a74703ae8"}
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, *args['my_bert_tuning'].values(), train_agument=True, test_not_masking=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 180}, executionInfo={'elapsed': 9477523, 'status': 'ok', 'timestamp': 1691882570727, 'user': {'displayName': 'HamidReza Yaghoubi Araghi', 'userId': '16858751766525091369'}, 'user_tz': -210}, id="3MQX34t6mQVg", outputId="a9451bdb-1f4d-4c03-9aeb-313ffb1b89f9"}
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, *args['my_bert_tuning'].values(), train_agument=True, test_not_masking=True)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 5541, 'status': 'ok', 'timestamp': 1691882576261, 'user': {'displayName': 'HamidReza Yaghoubi Araghi', 'userId': '16858751766525091369'}, 'user_tz': -210}, id="5d3UJkB3mQVh", outputId="60b65663-f0c5-4199-aa8c-55bc8a530b95"}
+save_model(model=my_bert_model, model_name='my_bert_model_agumented',
+           epoch=args['my_bert_tuning']['num_epochs'], lr=args['my_bert_tuning']['lr'],
+           batch_size=args['my_bert_tuning']['batch_size'], k=k)
+```
+
+<!-- #region id="W2gIfrwKqi26" jp-MarkdownHeadingCollapsed=true -->
+# Visualization
+<!-- #endregion -->
+
+```{python id="SydKhBkF1lP2"}
+def visualize_model(model, visualization_args, dataset=test_dataset, batch_size=32, tokenizer=tokenizer):
+
+    model.eval()
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(data_loader):
+            input_ids = batch['input_ids'].to(DEVICE)
+            attention_mask = batch['attention_mask'].to(DEVICE)
+            labels = batch['labels'].to(DEVICE)
+            groups = batch['groups']
+
+            outputs = model(input_ids, attention_mask=attention_mask, labels=labels,
+                            use_grad_cam=visualization_args['use_grad_cam'],
+                            rational_replacing=visualization_args['rational_replacing'],
+                            rational_augmentation=visualization_args['rational_augmentation'],
+                            train_label_replacing=visualization_args['label_replacing'],
+                            train_agument=visualization_args['agument'],
+                            test_reverse = visualization_args['test_reverse'],
+                            test_mode = visualization_args['test_not_masking'],
+                            debug=True, groups=groups)
+            break
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 3163, 'status': 'ok', 'timestamp': 1693664566976, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="X2pkI7uKqyez", outputId="76fe8767-18a4-492f-c3ec-855dcb022aaf"}
+fine_tuned_bert_model = Bert(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
+k = 7
+my_bert_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
+my_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/my_bert_model/epoch=2_lr=2e-05_batch_size=32_k=7.pt'))
+```
+
+```{python colab={'background_save': True, 'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 120, 'status': 'ok', 'timestamp': 1693664566977, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="2NPW9AN5CvIO", outputId="67f74bf9-bce4-440b-8d45-0e59b94bc2d6"}
+visualization_args = {
+    'use_grad_cam': False,
+    'rational_replacing': True,
+    'rational_augmentation': False,
+    'label_replacing': True,
+    'agument': True,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+visualize_model(my_bert_model, visualization_args)
+```
+
+<!-- #region id="LT5HBk94r_yH" -->
+# Debug
+<!-- #endregion -->
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 429}, executionInfo={'elapsed': 7211, 'status': 'error', 'timestamp': 1690285026726, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="RtxNsz2eon14", outputId="235620a7-2997-47ad-d64f-d7da719af9b3"}
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=True)
+model = fine_tuned_bert_model
+model.eval()
+test_loss = 0
+test_acc = 0
+test_preds = []
+test_labels = []
+pbar = tqdm(test_loader)
+for batch_idx, batch in enumerate(pbar):
+    input_ids = batch['input_ids'].to(DEVICE)
+    attention_mask = batch['attention_mask'].to(DEVICE)
+    labels = batch['labels'].to(DEVICE)
+
+    outputs = model(input_ids, attention_mask=attention_mask, labels=labels, not_masking=False)
+    loss = outputs['loss']
+    logits = outputs['logits']
+    test_loss += loss.item()
+
+    preds = torch.argmax(logits, dim=1)
+    test_acc += accuracy_score(labels.cpu().numpy(), preds.cpu().numpy())
+    avg_loss = test_loss / ((batch_idx + 1))
+    avg_acc = test_acc / ((batch_idx + 1))
+
+    pbar.set_description(f"AvgTestLoss: {avg_loss:.4f}, AvgTestAcc: {avg_acc:.4f}")
+
+    test_preds.extend(preds.cpu().numpy())
+    test_labels.extend(labels.cpu().numpy())
+
+test_loss /= len(test_loader)
+test_acc /= len(test_loader)
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 5299, 'status': 'ok', 'timestamp': 1688333778617, 'user': {'displayName': 'HamidReza Yaghoubi Araghi', 'userId': '16858751766525091369'}, 'user_tz': -210}, id="zNnAlvMgsDed", outputId="6c45a83d-21cd-47ab-f74f-68793ec0020e"}
+fine_tuned_bert_model = Bert(num_labels=2, tune_only_last_layer=True)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('our_spurious_imdb_fine_tuned_bert_model_epoch=5_lr=0.0001_batch_size=64_max_length=64.pt'))
+
+fine_tuned_my_bert_model = MyBert(fine_tuned_bert_model, num_labels=2, k=30, debug=True).to(DEVICE)
+fine_tuned_my_bert_model.load_state_dict(torch.load('our_spurious_imdb_fine_tuned_my_bert_k=40_2-1_epoch=5_lr=0.0001_batch_size=64_max_length=64.pt'))
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 626, 'status': 'ok', 'timestamp': 1689781767660, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="SPPtz5fAtxhz", outputId="98dbfc3b-0e4b-4d7e-8057-c60b710d9f00"}
+test_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+counter = 0
+for batch in test_loader:
+    input_ids = batch['input_ids'].to(DEVICE)
+    attention_mask = batch['attention_mask'].to(DEVICE)
+    labels = batch['labels'].to(DEVICE)
+    output = fine_tuned_my_bert_model(input_ids, attention_mask=attention_mask, debug=True, replacing=False)
+    print(labels[0])
+    print(output['logits'][0])
+    break
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 425, 'status': 'ok', 'timestamp': 1689782022837, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="q4Ro3maP1Rae", outputId="f9f30230-179f-41a1-fb1f-bf23bee3bbd8"}
+import numpy as np
+input =[  101,  2023,  2003,  2026,  5440,  3185,  2412,  1012,  1045,  2031,
+         3427,  2009,  2012,  2560, 20730,  2184,  2335,  1998,  1045,  5390,
+         2296,  2051,  1012,  2026,  2155, 27591,  2033,  2025,  2000,  3422,
+         2009,  2061,  1045,  2180,  2102,  2031,  1037,  6933,  4906,  1012,
+         1045,  2228,  1045,  2293,  2008,  2009,  2003,  1037,  2995,  2466,
+         2517,  2011, 14405, 19291,  2063,  2370,  2074,  2004,  2172,  2004,
+         1045,  2293,  1996,   102]
+
+# new_input = [  101, 24811,  2890,  4143,  2126,  2067,  2012,  1996,  6440,  1997,
+#          2529, 10585,  6814,  3549,  2071,  2038,  1998,  2081,  8982,  4022,
+#          1010,  2718,  2169,  2060,  2058,  1996,  4641,  2007,  2054,  2412,
+#          2027,  2071,  6723,  1010,  1998,  2308,  2020,  2196,  2464,  1998,
+#          4593,  2062,  2028,  2051,  2018, 17448,  1012, 15732,  2003,  3549,
+#          2973,  1999,  1037, 20969,  7578,  2555,  2007,  1037, 10338, 10610,
+#          2080,  1010,  1037,   102]
+
+
+string_list = tokenizer.decode(input).split()
+# new_string_list = tokenizer.decode(new_input).split()
+
+new_mask = [1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0., 0., 1., 1., 0., 1., 0., 0., 0., 0., 0., 0., 0.,
+        0., 1., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1.,
+        0., 1., 0., 1., 0., 0., 0., 0., 1., 1.]
+
+masked_string_list = [string_list[i] if new_mask[i] else 'None' for i in range(len(string_list))]
+
+filtered_string_list = [string_list[i] for i in range(len(string_list)) if new_mask[i] == 0]
+# new_filtered_string_list = [new_string_list[i] for i in range(len(new_string_list)) if new_mask[i] == 0]
+# filtered_string_list = [token for token in filtered_string_list if token != '[PAD]']
+
+print('------ORIGINAL TEXT------')
+print(' '.join(string_list))
+
+print("-------MASKED TEXT-------")
+print(' '.join(masked_string_list))
+
+print("------MASKED TOKEN-------")
+print(filtered_string_list)
+# print(new_filtered_string_list)
+print(len(filtered_string_list))
+
+# print('------SHUFFLED TEXT------')
+# print(' '.join(new_string_list))
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 35}, executionInfo={'elapsed': 431, 'status': 'ok', 'timestamp': 1689782065133, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="YZC2V3w32-IV", outputId="eb10bae2-902f-470b-bae0-339e6bd12cfa"}
+new_mask[14]
+string_list[14]
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/', 'height': 35}, executionInfo={'elapsed': 17, 'status': 'ok', 'timestamp': 1689782167946, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="ZF0DSxqg0gI3", outputId="0ce88842-3cd2-42ec-a416-2c6edff341ca"}
+max_token = np.argmax(
+    [-1.4610e+00, -2.8886e-01, -1.0807e+00,  6.8984e-02,  5.2259e-01,
+        -1.2650e-01, -4.1524e-01, -8.3243e-01,  2.7661e-01, -1.8780e-01,
+        -2.7425e-01,  5.8449e-01, -7.4261e-01, -1.3977e+00,  3.1624e+00,
+        -5.3190e-01, -4.2031e-01,  2.7610e-01,  1.8121e-01,  4.5520e-01,
+        -7.7785e-03, -6.4468e-02, -1.5800e-01,  6.2348e-01, -5.2412e-01,
+         4.6673e+00,  9.4550e-01,  1.8885e-01,  1.0058e+00,  9.6701e-02,
+        -4.4912e-01, -1.3513e+00,  1.7839e-01, -1.4030e-01,  3.8562e-01,
+        -7.6057e-01,  5.7889e-02,  1.0548e+00, -5.5306e-01, -2.4999e-01,
+        -3.6421e-01,  8.3747e-03, -1.3832e+00, -6.0916e-01, -9.7640e-01,
+        -5.9565e-01, -4.1884e-01, -1.2850e+00,  1.8451e-01, -5.2520e-01,
+         2.2948e-03, -5.4675e-01,  1.4637e+00,  2.0995e+00, -8.5624e-02,
+         1.2197e+00, -6.3237e-01,  7.6313e-01, -2.2039e-01, -5.0600e-01,
+        -3.4569e-02, -1.5507e-01,  7.7819e-01, -8.9426e-01]
+    )
+
+tokenizer.decode([input[max_token]])
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 12, 'status': 'ok', 'timestamp': 1689782169473, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="acwTHTwuFlh_", outputId="9e51068b-1bda-49fa-cf53-1bee108086f9"}
+max_token
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 12, 'status': 'ok', 'timestamp': 1689705287790, 'user': {'displayName': 'Liên Hồng', 'userId': '16972839904354450080'}, 'user_tz': -210}, id="O5sbJw-3jAGO", outputId="709bfc59-33c1-481e-ceb8-febea4e9e8a9"}
+tokenizer('hamid')
+```
