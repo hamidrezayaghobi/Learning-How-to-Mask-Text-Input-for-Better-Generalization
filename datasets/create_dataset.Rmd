@@ -1,0 +1,295 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.15.1
+  kernelspec:
+    display_name: Python 3 (ipykernel)
+    language: python
+    name: python3
+---
+
+# Initalization
+
+```{python}
+import pandas as pd
+
+from transformers import BertTokenizer
+from tqdm.notebook import tqdm
+```
+
+# MultiNLI (Just Like JTT and GFRO)
+
+```{python}
+# # !wget https://nlp.stanford.edu/data/dro/multinli_bert_features.tar.gz
+```
+
+```{python}
+## Downlaod metadata from https://github.com/kohpangwei/group_DRO/tree/master/dataset_metadata/multinli and put it in raw/
+```
+
+```{python}
+# !tar -xzf multinli_bert_features.tar.gz
+# !mv cached_dev_bert-base-uncased_128_mnli raw/cached_dev_bert-base-uncased_128_mnli
+# !mv cached_dev_bert-base-uncased_128_mnli-mm raw/cached_dev_bert-base-uncased_128_mnli-mm
+# !mv cached_train_bert-base-uncased_128_mnli raw/cached_train_bert-base-uncased_128_mnli
+
+# # !rm multinli_bert_features.tar.gz
+```
+
+```{python}
+import os
+import torch
+import pandas as pd
+from PIL import Image
+import numpy as np
+import torchvision.transforms as transforms
+from torch.utils.data import Dataset, Subset
+
+class MultiNLIDataset(Dataset):
+    """
+    MultiNLI dataset.
+    label_dict = {
+        'contradiction': 0,
+        'entailment': 1,
+        'neutral': 2
+    }
+    # Negation words taken from https://arxiv.org/pdf/1803.02324.pdf
+    negation_words = ['nobody', 'no', 'never', 'nothing']
+    """
+
+    def __init__(self, root_dir,
+                 target_name, confounder_names,
+                 augment_data=False,
+                 model_type='bert'):
+        self.root_dir = root_dir
+        self.target_name = target_name
+        self.confounder_names = confounder_names
+        self.model_type = model_type
+        self.augment_data = augment_data
+
+        assert len(confounder_names) == 1
+        assert confounder_names[0] == 'sentence2_has_negation'
+        assert target_name in ['gold_label_preset', 'gold_label_random']
+        assert augment_data == False
+        assert model_type == 'bert'
+
+        self.data_dir = os.path.join(
+            self.root_dir,
+            'raw')
+        self.glue_dir = os.path.join(
+            self.root_dir,
+            'raw')
+        if not os.path.exists(self.data_dir):
+            raise ValueError(
+                f'{self.data_dir} does not exist yet. Please generate the dataset first.')
+        if not os.path.exists(self.glue_dir):
+            raise ValueError(
+                f'{self.glue_dir} does not exist yet. Please generate the dataset first.')
+
+        # Read in metadata
+        type_of_split = target_name.split('_')[-1]
+        self.metadata_df = pd.read_csv(
+            os.path.join(
+                self.data_dir,
+                f'metadata_{type_of_split}.csv'),
+            index_col=0)
+
+        # Get the y values
+        # gold_label is hardcoded
+        self.y_array = self.metadata_df['gold_label'].values
+        self.n_classes = len(np.unique(self.y_array))
+
+        self.confounder_array = self.metadata_df[confounder_names[0]].values
+        self.n_confounders = len(confounder_names)
+
+
+        # Map to groups
+        self.n_groups = len(np.unique(self.confounder_array)) * self.n_classes
+        self.group_array = (self.y_array*(self.n_groups/self.n_classes) + self.confounder_array).astype('int')
+
+
+        # Extract splits
+        self.split_array = self.metadata_df['split'].values
+        self.split_dict = {
+            'train': 0,
+            'val': 1,
+            'test': 2
+        }
+
+        # Load features
+        self.features_array = []
+        for feature_file in [
+            'cached_train_bert-base-uncased_128_mnli',
+            'cached_dev_bert-base-uncased_128_mnli',
+            'cached_dev_bert-base-uncased_128_mnli-mm'
+            ]:
+            features = torch.load(
+                os.path.join(
+                    self.glue_dir,
+                    feature_file))
+            self.features_array += features
+
+        self.all_input_ids = torch.tensor([f.input_ids for f in self.features_array], dtype=torch.long)
+        self.all_input_masks = torch.tensor([f.input_mask for f in self.features_array], dtype=torch.long)
+        self.all_segment_ids = torch.tensor([f.segment_ids for f in self.features_array], dtype=torch.long)
+        self.all_label_ids = torch.tensor([f.label_id for f in self.features_array], dtype=torch.long)
+
+        self.x_array = torch.stack((
+            self.all_input_ids,
+            self.all_input_masks,
+            self.all_segment_ids), dim=2)
+
+        assert np.all(np.array(self.all_label_ids) == self.y_array)
+
+
+    def __len__(self):
+        return len(self.y_array)
+
+    def __getitem__(self, idx):
+        y = self.y_array[idx]
+        g = self.group_array[idx]
+        x = self.x_array[idx, ...]
+        return x, y, g
+
+    def get_splits(self, splits, train_frac=1.0):
+        subsets = {}
+        for split in splits:
+            assert split in ('train','val','test'), split+' is not a valid split'
+            mask = self.split_array == self.split_dict[split]
+            num_split = np.sum(mask)
+            indices = np.where(mask)[0]
+            if train_frac<1 and split == 'train':
+                num_to_retain = int(np.round(float(len(indices)) * train_frac))
+                indices = np.sort(np.random.permutation(indices)[:num_to_retain])
+            subsets[split] = Subset(self, indices)
+        return subsets
+
+    def group_str(self, group_idx):
+        y = group_idx // (self.n_groups/self.n_classes)
+        c = group_idx % (self.n_groups//self.n_classes)
+
+        attr_name = self.confounder_names[0]
+        group_name = f'{self.target_name} = {int(y)}, {attr_name} = {int(c)}'
+        return group_name
+```
+
+```{python}
+pwd
+```
+
+```{python}
+random_dataset = MultiNLIDataset(
+    root_dir='/home/user01/hamidreza/Learning-How-to-Mask-Text-Input-for-Better-Generalization/dataset',
+    target_name='gold_label_random', confounder_names=['sentence2_has_negation'],
+    )
+random_splited_dataset = random_dataset.get_splits(['train','val','test'])
+```
+
+```{python}
+PRE_TRAINED_MODEL_NAME = 'bert-base-uncased'
+tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME, do_lower_case=True)
+```
+
+```{python}
+data_type = 'train'
+input_list = []
+label_list = []
+group_list = []
+segment_list = []
+for index in tqdm(range(len(random_splited_dataset[data_type]))):
+    input = random_splited_dataset[data_type][index][0][:, 0]
+    string_input = tokenizer.decode(input)
+    clean_string_input = [x for x in string_input.split() if x not in ['[CLS]', '[SEP]', '[PAD]']]
+    string_input = " ".join(clean_string_input)
+    # attention_mask = random_train_dataset[data_type][0][0][:, 1]
+    # split = random_train_dataset[data_type][index][0][:, 2]
+    segment_ids = random_splited_dataset[data_type][index][0][:, 2]
+    label = random_splited_dataset[data_type][index][1]
+    group = random_splited_dataset[data_type][index][2]
+
+    input_list.append(string_input)
+    label_list.append(label)
+    group_list.append(group)
+    segment_list.append(segment_ids.numpy())
+```
+
+```{python}
+train_pdf = pd.DataFrame(data={'text':input_list, 'label':label_list, 'group':group_list, 'segments':segment_list})
+train_pdf.head()
+```
+
+```{python}
+train_pdf.to_csv('MultiNLI_dataset/MultiNLI_dataset/train.csv', index=False)
+```
+
+```{python}
+data_type = 'test'
+test_input_list = []
+test_label_list = []
+test_group_list = []
+test_segment_list = []
+for index in tqdm(range(len(random_splited_dataset[data_type]))):
+    input = random_splited_dataset[data_type][index][0][:, 0]
+    string_input = tokenizer.decode(input)
+    clean_string_input = [x for x in string_input.split() if x not in ['[CLS]', '[SEP]', '[PAD]']]
+    string_input = " ".join(clean_string_input)
+    # attention_mask = random_train_dataset[data_type][0][0][:, 1]
+    # split = random_train_dataset[data_type][index][0][:, 2]
+    segment_ids = random_splited_dataset[data_type][index][0][:, 2]
+    label = random_splited_dataset[data_type][index][1]
+    group = random_splited_dataset[data_type][index][2]
+
+    test_input_list.append(string_input)
+    test_label_list.append(label)
+    test_group_list.append(group)
+    test_segment_list.append(segment_ids.numpy())
+```
+
+```{python}
+test_pdf = pd.DataFrame(data={'text':test_input_list, 'label':test_label_list, 'group':test_group_list, 'segments':test_segment_list})
+test_pdf.tail()
+```
+
+```{python}
+test_pdf.to_csv('MultiNLI_dataset/MultiNLI_dataset/test.csv', index=False)
+```
+
+```{python}
+data_type = 'val'
+val_input_list = []
+val_label_list = []
+val_group_list = []
+val_segment_list = []
+for index in tqdm(range(len(random_splited_dataset[data_type]))):
+    input = random_splited_dataset[data_type][index][0][:, 0]
+    string_input = tokenizer.decode(input)
+    clean_string_input = [x for x in string_input.split() if x not in ['[CLS]', '[SEP]', '[PAD]']]
+    string_input = " ".join(clean_string_input)
+    # attention_mask = random_train_dataset[data_type][0][0][:, 1]
+    # split = random_train_dataset[data_type][index][0][:, 2]
+    segment_ids = random_splited_dataset[data_type][index][0][:, 2]
+    label = random_splited_dataset[data_type][index][1]
+    group = random_splited_dataset[data_type][index][2]
+
+    val_input_list.append(string_input)
+    val_label_list.append(label)
+    val_group_list.append(group)
+    val_segment_list.append(segment_ids.numpy())
+```
+
+```{python}
+val_pdf = pd.DataFrame(data={'text':val_input_list, 'label':val_label_list, 'group':val_group_list, 'segments':val_segment_list})
+val_pdf.tail()
+```
+
+```{python}
+val_pdf.to_csv('MultiNLI_dataset/MultiNLI_dataset/val.csv', index=False)
+```
+
+```{python}
+
+```
