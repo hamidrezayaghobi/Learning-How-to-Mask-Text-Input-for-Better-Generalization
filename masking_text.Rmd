@@ -26,7 +26,7 @@ drive.mount('/content/drive')
 # cd /content/drive/MyDrive/Colab\ Notebooks/Shared\ Lab/
 ```
 
-<!-- #region id="6PfbAm5Au73m" -->
+<!-- #region id="6PfbAm5Au73m" jp-MarkdownHeadingCollapsed=true -->
 # Initializatoin
 <!-- #endregion -->
 
@@ -48,6 +48,7 @@ drive.mount('/content/drive')
 import ast
 import copy
 import numpy as np
+import math
 import os
 import pandas as pd
 import pickle
@@ -59,6 +60,7 @@ from pytorch_transformers import AdamW, WarmupLinearSchedule
 from torch.utils.data import Dataset, DataLoader
 from tqdm.notebook import tqdm
 from transformers import BertTokenizer, BertModel, BertForSequenceClassification
+from transformers import get_linear_schedule_with_warmup, AdamW
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 from codes.models import Bert, BertForSequence, TransformerRationalePredictor
@@ -132,7 +134,7 @@ NUM_EPOCHS = 2
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 ```
 
-<!-- #region id="z_WWWxzNu73x" -->
+<!-- #region id="z_WWWxzNu73x" jp-MarkdownHeadingCollapsed=true -->
 # Data Prepration
 <!-- #endregion -->
 
@@ -269,7 +271,7 @@ if DATA_SET_TYPE == 'MultiNLI':
     val_dataset = CustomDataset(val_encodings, val_labels, val_groups, val_segment_ids)
 ```
 
-<!-- #region id="arieYiojDiTg" -->
+<!-- #region id="arieYiojDiTg" jp-MarkdownHeadingCollapsed=true -->
 # Methods
 <!-- #endregion -->
 
@@ -293,11 +295,11 @@ class Method():
 ```
 
 ```{python}
-words = {
-    'chosen': [],
-    'replaced': [],
-    'group': [],
-}
+# words = {
+#     'first_text': [],
+#     'second_text': [],
+#     'group': [],
+# }
 ```
 
 ```{python executionInfo={'elapsed': 24, 'status': 'ok', 'timestamp': 1693916820106, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="unWFvmw1y3gH"}
@@ -311,8 +313,15 @@ def visualize(input_ids_1, input_ids_2, groups, labels, replacing_labels, tokeni
                                                                                       groups,
                                                                                       labels.cpu().numpy(),
                                                                                       replacing_labels.cpu().numpy())):
+
+        # if not group in [4, 5]:
+        #     continue
         text_1 = tokenizer.decode(input_id_1)
+        text_1 = text_1.replace("[CLS]", "")
+        text_1 = text_1.replace("[SEP]", "")
         text_2 = tokenizer.decode(input_id_2)
+        text_2 = text_2.replace("[CLS]", "")
+        text_2 = text_2.replace("[SEP]", "")
 
         differ = difflib.Differ()
         diff = list(differ.compare(text_1.split(), text_2.split()))
@@ -327,24 +336,27 @@ def visualize(input_ids_1, input_ids_2, groups, labels, replacing_labels, tokeni
                 second_text.append(f"{Fore.BLACK}{word[2:]}")
             elif word.startswith('- '):
                 first_text.append(f"{Fore.GREEN}{word[2:]}")
-                words['chosen'].append(word[2:])
-                words['group'].append(group)
+                # words['chosen'].append(word[2:])
+                # words['group'].append(group)
             elif word.startswith('+ '):
                 second_text.append(f"{Fore.RED}{word[2:]}")
-                words['replaced'].append(word[2:])
+                # words['replaced'].append(word[2:])
 
 
             
 
-        # first_text = " ".join(first_text)
-        # second_text = " ".join(second_text)
-        # print("==========")
-        # print(f"{index}-group={Fore.BLUE}{group}{Fore.BLACK} | label {label}->{replacing_label}")
-        # print(first_text)
-        # print(second_text)
+        first_text = " ".join(first_text)
+        second_text = " ".join(second_text)
+        print("==========")
+        print(f"{index}-group={Fore.BLUE}{group}{Fore.BLACK} | label {label}->{replacing_label}")
+        # words['group'].append(group)
+        # words['first_text'].append(first_text)
+        # words['second_text'].append(second_text)
+        print(first_text)
+        print(second_text)
 ```
 
-<!-- #region id="eyfX56-vfet2" -->
+<!-- #region id="eyfX56-vfet2" jp-MarkdownHeadingCollapsed=true -->
 ## Rational Augmentation
 <!-- #endregion -->
 
@@ -639,7 +651,8 @@ class MyBert(nn.Module):
                 predicted_attention_mask = (
                     self.attention_mask_predictor(input_ids.to(torch.float64))
                 )
-
+            predicted_attention_mask = torch.randn(predicted_attention_mask.shape).to(DEVICE)
+            
             mask = self.get_mask(predicted_attention_mask, self.k, use_grad_cam=use_grad_cam)
             mask[:, 0] = 1
             mask[:, -1] = 1
@@ -705,14 +718,13 @@ args = {
         'batch_size': 2048,
     },
     'rational_transformer_training': {
-        'num_epochs': 1,
-        'lr': 0.000001,
+        'num_epochs': 2,
+        'lr': 2e-5,
         'batch_size': 128,
     },
     'my_bert_tuning': {
         'num_epochs': 2,
         'lr': 2e-5,
-        # 'lr': 0.0001,
         'batch_size': 32,
     },
     'my_bert_grad_cam_tuning': {
@@ -745,10 +757,8 @@ def run_epoch(run_type, model, data_loader, optimizer, scheduler=None, **kwargs)
     if run_type in ['Test', 'Val']:
         model.eval()
     else:
-        model.train
+        model.train()
         optimizer.zero_grad()
-        # if DATA_SET_TYPE == 'MultiNLI':
-        #     model.zero_grad()
 
     all_preds = []
     all_labels = []
@@ -844,14 +854,6 @@ def save_model(model, model_name, epoch, lr, batch_size, k=None):
     print(model_path)
 ```
 
-```{python}
-import math
-```
-
-```{python}
-from transformers import get_linear_schedule_with_warmup, AdamW
-```
-
 ```{python executionInfo={'elapsed': 20, 'status': 'ok', 'timestamp': 1693916821028, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="YoQ7Tveju739"}
 def fine_tune(model, train_args, test_args,
               num_epochs=NUM_EPOCHS, lr=LEARNING_RATE, batch_size=BATCH_SIZE,
@@ -890,7 +892,6 @@ def fine_tune(model, train_args, test_args,
                 "weight_decay": 0.0,
             },
         ]
-        # t_total = len(train_dataset) * num_epochs
         t_total = math.ceil(num_epochs*len(train_dataset)*1./batch_size)
         warmup_steps = int(t_total*warmup_percent)
         optimizer = AdamW(model.parameters(), lr=lr, eps=adam_epsilon, correct_bias=False)
@@ -901,24 +902,11 @@ def fine_tune(model, train_args, test_args,
     for epoch in range(num_epochs):
 
         model, train_loss, train_acc = run_epoch("Train", model, train_loader, optimizer, scheduler, **train_args)
-        
-        val_loss = None
-        # if DATA_SET_TYPE == 'MultiNLI':
-            # _, val_loss, val_acc = run_epoch("Val", model, val_loader, optimizer, scheduler, **train_args)
-            # scheduler.step(val_loss)
-
         _, test_loss, test_acc = run_epoch("Test", model, test_loader, optimizer, scheduler, **test_args)
 
-        if val_loss:
-            print(f'Epoch {epoch + 1}: train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, test_loss={test_loss:.4f}, test_acc={test_acc:.4f}, val_loss={val_loss:.4f}, val_acc={val_acc:.4f}')
-        else:
-            print(f'Epoch {epoch + 1}: train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, test_loss={test_loss:.4f}, test_acc={test_acc:.4f}')
-
+        print(f'Epoch {epoch + 1}: train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, test_loss={test_loss:.4f}, test_acc={test_acc:.4f}')
+        
         save_model(model, model_name, epoch, lr, batch_size, k=k)
-
-
-    # if is_save_model:
-    #     save_model(model, model_name, num_epochs, lr, batch_size, k=k)
 
     return model
 ```
@@ -1358,7 +1346,7 @@ fine_tuned_my_bert_grad_cam_model = fine_tune(my_bert_grad_cam_model, *args['my_
 # MultiNLI Dataset (My Bert)
 <!-- #endregion -->
 
-<!-- #region id="HNUCR8IZgEj4" -->
+<!-- #region id="HNUCR8IZgEj4" jp-MarkdownHeadingCollapsed=true -->
 ### Training Bert on MultiNLI
 <!-- #endregion -->
 
@@ -1415,7 +1403,7 @@ test_args = {
 
 fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
 fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
-fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
 
 for name, param in fine_tuned_bert_model.named_parameters():
     param.requires_grad = False
@@ -1425,10 +1413,46 @@ rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to
 fine_tuned_rational_transformer_model = fine_tune(rational_transformer_model, 
                                                   train_args, test_args, *args['rational_transformer_training'].values(), 
                                                   is_save_model=True, k=k,
-                                                  model_name="fine_tuned_rational_transformer_model_epoch=5_wga_erm=63.85")
+                                                  model_name="fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03")
 ```
 
-<!-- #region id="c4gXvz7K3r8n" -->
+```{python}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': True,
+    'test_not_masking': False,
+}
+
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
+
+for name, param in fine_tuned_bert_model.named_parameters():
+    param.requires_grad = False
+k = 12
+
+rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
+fine_tuned_rational_transformer_model = fine_tune(rational_transformer_model, 
+                                                  train_args, test_args, *args['rational_transformer_training'].values(), 
+                                                  is_save_model=True, k=k,
+                                                  model_name="fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03")
+```
+
+<!-- #region id="c4gXvz7K3r8n" jp-MarkdownHeadingCollapsed=true -->
 ### Fine-tuning My Bert on MultiNLI (Rational Repalcing)
 <!-- #endregion -->
 
@@ -1455,10 +1479,98 @@ test_args = {
 
 fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
 fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
-fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
+k = 5
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03/epoch=1_lr=2e-05_batch_size=128_k=5.pt'))
+fine_tuned_rational_transformer_model.bert_model.bert_model.classifier = torch.nn.Linear(fine_tuned_rational_transformer_model.bert_model.bert_model.config.hidden_size, 3)
+fine_tuned_rational_transformer_model = fine_tuned_rational_transformer_model.to(DEVICE)
+
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values(), 
+                          is_save_model=True, k=k,
+                          model_name="my_bert_tuning_with_reinit_model_epoch=2_wga_erm=68.03")
+```
+
+```{python}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': True,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': True,
+}
+
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
+k = 5
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03/epoch=1_lr=2e-05_batch_size=128_k=5.pt'))
+# fine_tuned_rational_transformer_model.bert_model.bert_model.classifier = torch.nn.Linear(fine_tuned_rational_transformer_model.bert_model.bert_model.config.hidden_size, 3)
+fine_tuned_rational_transformer_model = fine_tuned_rational_transformer_model.to(DEVICE)
+
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values(), 
+                          is_save_model=True, k=k,
+                          model_name="my_bert_tuning_model_epoch=2_wga_erm=68.03")
+```
+
+-----------------------
+
+```{python}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': True,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': True,
+}
+
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
 k = 7
-fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
-fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=5_wga_erm=63.85/epoch=1_lr=1e-06_batch_size=128_k=7.pt'))
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03/epoch=1_lr=2e-05_batch_size=128_k=7.pt'))
+fine_tuned_rational_transformer_model.bert_model.bert_model.classifier = torch.nn.Linear(fine_tuned_rational_transformer_model.bert_model.bert_model.config.hidden_size, 3)
+fine_tuned_rational_transformer_model = fine_tuned_rational_transformer_model.to(DEVICE)
 
 for name, param in fine_tuned_rational_transformer_model.named_parameters():
     # if 'classifier' in name:
@@ -1469,7 +1581,7 @@ for name, param in fine_tuned_rational_transformer_model.named_parameters():
 
 my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values(), 
                           is_save_model=True, k=k,
-                          model_name="my_bert_tuning_model_epoch=5_wga_erm=63.85")
+                          model_name="my_bert_tuning_with_reinit_model_epoch=2_wga_erm=68.03")
 ```
 
 ```{python}
@@ -1495,10 +1607,12 @@ test_args = {
 
 fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
 fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
-fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
-k = 3
-fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
-fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=5_wga_erm=63.85/epoch=1_lr=1e-06_batch_size=128_k=7.pt'))
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
+k = 7
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03/epoch=1_lr=2e-05_batch_size=128_k=7.pt'))
+# fine_tuned_rational_transformer_model.bert_model.bert_model.classifier = torch.nn.Linear(fine_tuned_rational_transformer_model.bert_model.bert_model.config.hidden_size, 3)
+fine_tuned_rational_transformer_model = fine_tuned_rational_transformer_model.to(DEVICE)
 
 for name, param in fine_tuned_rational_transformer_model.named_parameters():
     # if 'classifier' in name:
@@ -1509,8 +1623,10 @@ for name, param in fine_tuned_rational_transformer_model.named_parameters():
 
 my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values(), 
                           is_save_model=True, k=k,
-                          model_name="my_bert_tuning_reinit_model_epoch=5_wga_erm=63.85")
+                          model_name="my_bert_tuning_model_epoch=2_wga_erm=68.03")
 ```
+
+--------------------
 
 ```{python}
 train_args = {
@@ -1535,10 +1651,12 @@ test_args = {
 
 fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
 fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
-fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
-k = 3
-fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
-fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=5_wga_erm=63.85/epoch=1_lr=1e-06_batch_size=128_k=7.pt'))
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
+k = 12
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03/epoch=1_lr=2e-05_batch_size=128_k=12.pt'))
+# fine_tuned_rational_transformer_model.bert_model.bert_model.classifier = torch.nn.Linear(fine_tuned_rational_transformer_model.bert_model.bert_model.config.hidden_size, 3)
+fine_tuned_rational_transformer_model = fine_tuned_rational_transformer_model.to(DEVICE)
 
 for name, param in fine_tuned_rational_transformer_model.named_parameters():
     # if 'classifier' in name:
@@ -1549,10 +1667,12 @@ for name, param in fine_tuned_rational_transformer_model.named_parameters():
 
 my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values(), 
                           is_save_model=True, k=k,
-                          model_name="my_bert_tuning_model_epoch=5_wga_erm=63.85")
+                          model_name="my_bert_tuning_model_epoch=2_wga_erm=68.03")
 ```
 
+<!-- #region jp-MarkdownHeadingCollapsed=true -->
 ### Fine-tuning My Bert on MultiNLI (Rational Repalcing with Label)
+<!-- #endregion -->
 
 ```{python}
 train_args = {
@@ -1577,10 +1697,12 @@ test_args = {
 
 fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
 fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
-fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
-k = 7
-fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
-fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=5_wga_erm=63.85/epoch=1_lr=1e-06_batch_size=128_k=7.pt'))
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
+k = 5
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03/epoch=1_lr=2e-05_batch_size=128_k=5.pt'))
+# fine_tuned_rational_transformer_model.bert_model.bert_model.classifier = torch.nn.Linear(fine_tuned_rational_transformer_model.bert_model.bert_model.config.hidden_size, 3)
+fine_tuned_rational_transformer_model = fine_tuned_rational_transformer_model.to(DEVICE)
 
 for name, param in fine_tuned_rational_transformer_model.named_parameters():
     # if 'classifier' in name:
@@ -1591,7 +1713,91 @@ for name, param in fine_tuned_rational_transformer_model.named_parameters():
 
 my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values(), 
                           is_save_model=True, k=k,
-                          model_name="my_bert_tuning_with_label_model_epoch=5_wga_erm=63.85")
+                          model_name="my_bert_tuning_with_label_model_epoch=2_wga_erm=68.03")
+```
+
+```{python}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': True,
+    'rational_augmentation': False,
+    'label_replacing': True,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': True,
+}
+
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
+k = 7
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03/epoch=1_lr=2e-05_batch_size=128_k=7.pt'))
+# fine_tuned_rational_transformer_model.bert_model.bert_model.classifier = torch.nn.Linear(fine_tuned_rational_transformer_model.bert_model.bert_model.config.hidden_size, 3)
+fine_tuned_rational_transformer_model = fine_tuned_rational_transformer_model.to(DEVICE)
+
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values(), 
+                          is_save_model=True, k=k,
+                          model_name="my_bert_tuning_with_label_model_epoch=2_wga_erm=68.03")
+```
+
+```{python}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': True,
+    'rational_augmentation': False,
+    'label_replacing': True,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': True,
+}
+
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
+k = 12
+fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k)
+fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03/epoch=1_lr=2e-05_batch_size=128_k=12.pt'))
+# fine_tuned_rational_transformer_model.bert_model.bert_model.classifier = torch.nn.Linear(fine_tuned_rational_transformer_model.bert_model.bert_model.config.hidden_size, 3)
+fine_tuned_rational_transformer_model = fine_tuned_rational_transformer_model.to(DEVICE)
+
+for name, param in fine_tuned_rational_transformer_model.named_parameters():
+    # if 'classifier' in name:
+    if 'attention_mask_predictor' not in name:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
+
+my_bert_model = fine_tune(fine_tuned_rational_transformer_model, train_args, test_args, *args['my_bert_tuning'].values(), 
+                          is_save_model=True, k=k,
+                          model_name="my_bert_tuning_with_label_model_epoch=2_wga_erm=68.03")
 ```
 
 <!-- #region id="8RdbqszW0qY3" jp-MarkdownHeadingCollapsed=true -->
@@ -1745,12 +1951,16 @@ save_model(model=my_bert_model, model_name='my_bert_model_agumented',
 # Visualization
 <!-- #endregion -->
 
+```{python}
+labelsssss = []
+```
+
 ```{python id="SydKhBkF1lP2"}
 def visualize_model(model, visualization_args, dataset=train_dataset, batch_size=32, tokenizer=tokenizer):
 
     model.eval()
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
+    i = 0
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(data_loader)):
             input_ids = batch['input_ids'].to(DEVICE)
@@ -1767,16 +1977,20 @@ def visualize_model(model, visualization_args, dataset=train_dataset, batch_size
                             test_reverse = visualization_args['test_reverse'],
                             test_mode = visualization_args['test_not_masking'],
                             debug=True, groups=groups)
-            break
+            print(torch.argmax(outputs['logits'], dim=1))
+            labelsssss.extend(torch.argmax(outputs['logits'], dim=1).cpu().numpy())
+            i +=1
+            if i == 20:
+                break
 ```
 
 ```{python colab={'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 3163, 'status': 'ok', 'timestamp': 1693664566976, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="X2pkI7uKqyez", outputId="76fe8767-18a4-492f-c3ec-855dcb022aaf"}
 fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
 fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
-fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model/epoch=5_lr=2e-05_batch_size=32.pt'))
-k = 3
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_bert_model_debugged/epoch=2_lr=2e-05_batch_size=32.pt'))
+k = 12
 my_bert_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
-my_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/my_bert_tuning_model_epoch=5_wga_erm=63.85/epoch=2_lr=2e-05_batch_size=32_k=7.pt'))
+my_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/fine_tuned_rational_transformer_model_epoch=2_wga_erm=68.03/epoch=1_lr=2e-05_batch_size=128_k=12.pt'))
 ```
 
 ```{python colab={'background_save': True, 'base_uri': 'https://localhost:8080/'}, executionInfo={'elapsed': 120, 'status': 'ok', 'timestamp': 1693664566977, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}, 'user_tz': -210}, id="2NPW9AN5CvIO", outputId="67f74bf9-bce4-440b-8d45-0e59b94bc2d6"}
@@ -1793,11 +2007,11 @@ visualize_model(my_bert_model, visualization_args)
 ```
 
 ```{python}
-len(words['chosen']), len(words['replaced']), len(words['group'])
+pd.DataFrame(data={'label': labelsssss}).value_counts()
 ```
 
 ```{python}
-train_pdf[['group', 'text_len']].groupby('group').agg('count')
+train_pdf[['label']].value_counts()
 ```
 
 ```{python}
@@ -1805,13 +2019,28 @@ train_pdf[['group', 'text_len']].groupby('group').agg('count')
 ```
 
 ```{python}
-512 + 98 + 599
+
+```
+
+```{python}
+
+```
+
+```{python}
+for random_index in np.random.randint(0, len(words['group']), 150):
+    print(f"{Fore.BLUE}===============idx={random_index} - group={words['group'][random_index]}===============")
+    print(" ".join(words['first_text'][random_index]))
+    print(" ".join(words['second_text'][random_index]))
+```
+
+```{python}
+
 ```
 
 ```{python}
 tmp = pd.DataFrame(data={
     'chosen': words['chosen'],
-    'replaced': words['replaced'][:604612],
+    'replaced': words['replaced'][:1009516],
     'group': [x.item() for x in words['group']],
 })
 
@@ -1866,10 +2095,6 @@ group_5[
     (group_5['chosen'] == 'never') |
     (group_5['chosen'] == 'nothing') 
 ]
-```
-
-```{python}
-group_4.head(60)
 ```
 
 ```{python}
