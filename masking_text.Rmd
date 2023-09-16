@@ -255,6 +255,63 @@ def visualize(input_ids_1, input_ids_2, groups, labels, replacing_labels, tokeni
         print(second_text)
 ```
 
+```{python}
+class MyAugmentation(Method):
+    def __init__(self, method_name, k, use_grad_cam):
+        super(RationalAugmentation, self).__init__(method_name)
+        self.k = k
+        self.use_grad_cam
+
+    def _agument_miss_classified_dataset(self, input_ids, attention_mask, labels, prediction):
+        batch_size = input_ids.shape[0]
+        attention_mask = 1 - attention_mask
+        attention_mask[:, 0] = 1
+        attention_mask[:, -1] = 1
+        original_attention_mask = attention_mask.clone()
+        attention_mask = attention_mask.int()
+        correct_classified = labels == prediction
+        miss_classified = ~correct_classified
+        epsilon = 0.01
+        input_ids = input_ids + epsilon
+
+        min_k = min((attention_mask == 0).count_nonzero(dim=1))
+        assert min_k != 0, print(f"Error! Min K must be greater than zero.\n input=\n{input_ids}\n attention_mask=\n{attention_mask}")
+
+        attention_mask[(attention_mask == 0).cumsum(dim=1) > min_k.item()] = 1
+
+        correct_classified_size = input_ids[correct_classified].shape[0]
+        miss_classified_size = batch_size - correct_classified_size
+
+        replacing_input_ids = input_ids[correct_classified] * (1 - attention_mask[correct_classified])
+
+        perm = torch.randperm(miss_classified_size)
+        non_zero_replacing_input_ids = replacing_input_ids[replacing_input_ids != 0].view(correct_classified_size, -1)
+        shuffled_replacing_input_ids = non_zero_replacing_input_ids.repeat(miss_classified_size, 1)[perm]
+
+        shuffled_replacing_input_ids = shuffled_replacing_input_ids[:miss_classified_size]
+
+        attention_mask[correct_classified] = 1
+        miss_classified_input_ids = input_ids[miss_classified] * attention_mask[miss_classified]
+        miss_classified_input_ids[miss_classified_input_ids == 0] = shuffled_replacing_input_ids.flatten()
+
+        agumented_input_ids = torch.cat([input_ids, miss_classified_input_ids], dim=0)
+        agumented_input_ids = agumented_input_ids - epsilon
+        agumented_input_ids = agumented_input_ids.long()
+        agumented_attention_mask = torch.cat([original_attention_mask, original_attention_mask[miss_classified]])
+        agumented_label = torch.cat([labels, labels[miss_classified]])
+
+        return agumented_input_ids, agumented_attention_mask, agumented_label
+
+
+    def execute(self, input_ids, mask, attention_mask, predicted_attention_mask, labels, prediction):
+        mask = self.fix_inputs_with_tokens_less_than_k(input_ids, attention_mask, mask, self.k)
+
+        augmentation_attention_mask = attention_mask * mask
+        input_ids, attention_mask, labels = self._agument_miss_classified_dataset(input_ids, augmentation_attention_mask, labels, prediction)
+
+        return input_ids, mask, augmentation_attention_mask
+```
+
 <!-- #region id="eyfX56-vfet2" -->
 ## Rational Augmentation
 <!-- #endregion -->
@@ -396,9 +453,15 @@ class MyBert(nn.Module):
                 predicted_attention_mask = (
                     self.attention_mask_predictor(input_ids.to(torch.float64))
                 )
+
+            
             # predicted_attention_mask = torch.randn(predicted_attention_mask.shape).to(DEVICE)
             
             mask = self.get_mask(predicted_attention_mask, self.k, use_grad_cam=use_grad_cam)
+            # att = (mask)[0].detach().cpu().numpy()
+            # inp = input_ids[0].cpu().numpy()
+            # for x, y in zip(att, inp):
+            #     print(f"token={''.join(tokenizer.decode(y).split())} - point={x}")
             mask[:, 0] = 1
             mask[:, -1] = 1
 
@@ -454,7 +517,7 @@ args = {
     'bert_tuning': {
         'num_epochs': 5,
         'lr': 2e-5,
-        'batch_size': 32,
+        'batch_size': 4,
     },
     'bert_last_layer_tuning': {
         'num_epochs': 10,
@@ -533,12 +596,12 @@ def fine_tune(model, train_args, test_args,
     # Define the training loop
     for epoch in range(num_epochs):
 
-        model, train_loss, train_acc = run_epoch("Train", DEVICE, DATA_SET_TYPE, model, train_loader, optimizer, scheduler, **train_args)
+        # model, train_loss, train_acc = run_epoch("Train", DEVICE, DATA_SET_TYPE, model, train_loader, optimizer, scheduler, **train_args)
         _, test_loss, test_acc = run_epoch("Test", DEVICE, DATA_SET_TYPE, model, test_loader, optimizer, scheduler, **test_args)
-
+        print(asdasd)
         print(f'Epoch {epoch + 1}: train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, test_loss={test_loss:.4f}, test_acc={test_acc:.4f}')
-        
-        save_model(model, model_name, epoch, lr, batch_size, DATA_SET_TYPE, MAX_LENGTH, k=k)
+        if is_save_model:
+            save_model(model, model_name, epoch, lr, batch_size, DATA_SET_TYPE, MAX_LENGTH, k=k)
 
     return model
 ```
@@ -553,8 +616,8 @@ def evaluate_model(model, eval_args, dataset=test_dataset, batch_size=BATCH_SIZE
     print(f'eval_loss={test_loss:.4f}, eval_acc={test_acc:.4f}')
 ```
 
-<!-- #region id="rajYNmLzsRgt" -->
-# IMDB dataset Training
+<!-- #region id="rajYNmLzsRgt" jp-MarkdownHeadingCollapsed=true -->
+# IMDB
 <!-- #endregion -->
 
 <!-- #region id="jvipo7VQEGW8" jp-MarkdownHeadingCollapsed=true -->
@@ -974,9 +1037,345 @@ fine_tuned_my_bert_grad_cam_model = fine_tune(my_bert_grad_cam_model, *args['my_
 #MultiNLI Training
 <!-- #endregion -->
 
-<!-- #region id="vDcvbiOiftyG" jp-MarkdownHeadingCollapsed=true -->
-# MultiNLI Dataset (My Bert)
+<!-- #region jp-MarkdownHeadingCollapsed=true -->
+# Splited MultiNLI
 <!-- #endregion -->
+
+```{python}
+import catboost
+from catboost import CatBoostClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+```
+
+```{python}
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/pre_train_fine_tuned_bert_model_2/epoch=1_lr=2e-05_batch_size=32.pt'))
+
+```
+
+```{python}
+def get_cat_boost_data(dataset):
+    data_loader = DataLoader(dataset, batch_size=32, shuffle=True)
+    features_list = []
+    labels_list = []
+    predicts_list = []
+    groups_list = []
+    
+    with torch.set_grad_enabled(False):
+         for batch in tqdm(data_loader):
+             input_ids = batch['input_ids'].to(DEVICE)
+             attention_mask = batch['attention_mask'].to(DEVICE)
+             token_type_ids = batch['segments_ids'].to(DEVICE)
+             labels = batch['labels'].to(DEVICE)
+             groups = batch['groups']
+             
+             logits = fine_tuned_bert_model.bert_model.bert(
+                 input_ids=input_ids,
+                 attention_mask=attention_mask,
+                 token_type_ids=token_type_ids,
+             )
+             feature = fine_tuned_bert_model.bert_model.dropout(logits[1])
+             predicts = torch.argmax(fine_tuned_bert_model.bert_model.classifier(feature), 1)
+             
+             features_list.extend(feature.detach().cpu().numpy())
+             labels_list.extend(labels.cpu().numpy())
+             predicts_list.extend(predicts.cpu().numpy())
+             groups_list.extend(groups.numpy())
+             # break
+    
+    features_pdf = pd.DataFrame(features_list)
+    features_pdf['label'] = labels_list
+    features_pdf['predict'] = predicts_list
+    features_pdf['groups'] = groups_list
+    features_pdf['accuracy'] = features_pdf['label'] == features_pdf['predict']
+    return features_pdf
+    
+```
+
+```{python}
+train_features_pdf = get_cat_boost_data(fine_tune_train)
+test_features_pdf = get_cat_boost_data(test_dataset)
+
+train_features_pdf.head()
+```
+
+```{python}
+train_features_pdf[['groups', 'accuracy']].groupby('groups').agg('mean')
+```
+
+```{python}
+accuracy_score(train_features_pdf['label'], train_features_pdf['predict'])
+```
+
+```{python}
+test_features_pdf[['groups', 'accuracy']].groupby('groups').agg('mean')
+```
+
+```{python}
+accuracy_score(test_features_pdf['label'], test_features_pdf['predict'])
+```
+
+```{python}
+model = CatBoostClassifier(
+    iterations=500,
+    max_depth=4,
+    min_child_samples=100,
+    learning_rate=0.01, 
+    l2_leaf_reg=0.5,
+    random_seed=42,
+)
+```
+
+```{python}
+X = features_pdf.drop(['label', 'groups', 'accuracy'], axis=1)
+y = features_pdf['label']
+
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.3, random_state=42)
+```
+
+```{python}
+model.fit(X_train, y_train, eval_set=(X_val, y_val), early_stopping_rounds=100)
+```
+
+```{python}
+X_test = test_features_pdf.drop(['label', 'groups', 'accuracy'], axis=1)
+
+y_pred = model.predict(X_test)
+y_pred = [x[0] for x in y_pred]
+test_features_pdf['new_predict'] = y_pred
+```
+
+```{python}
+test_features_pdf['new_accuracy'] = test_features_pdf['label'] == test_features_pdf['new_predict']
+
+test_features_pdf[['groups', 'accuracy', 'new_accuracy']].groupby('groups').agg('mean')
+```
+
+```{python}
+accuracy_score(test_features_pdf['label'], test_features_pdf['predict'])
+```
+
+```{python}
+accuracy_score(test_features_pdf['label'], test_features_pdf['new_predict'])
+```
+
+```{python}
+
+```
+
+```{python}
+
+```
+
+```{python}
+
+```
+
+```{python}
+idx = 9
+sample = train_dataset[idx]
+print(f"group={sample['groups'].item()}")
+print(f"label={sample['labels'].item()}")
+print(tokenizer.decode(sample['input_ids']))
+
+input_ids=torch.tensor([sample['input_ids'].numpy()] * 2).to(DEVICE)
+attention_mask=torch.tensor([sample['attention_mask'].numpy()] * 2).to(DEVICE)
+token_type_ids=torch.tensor([sample['segments_ids'].numpy()] * 2).to(DEVICE)
+labels=torch.tensor([sample['labels'].item()] * 2).to(DEVICE)
+
+logits = fine_tuned_bert_model.bert_model.bert(
+    input_ids=input_ids,
+    attention_mask=attention_mask,
+    token_type_ids=token_type_ids,
+    # labels=labels,
+)
+feature = fine_tuned_bert_model.bert_model.dropout(logits[1])
+```
+
+```{python}
+feature = fine_tuned_bert_model.bert_model.dropout(logits[1])
+feature
+```
+
+```{python}
+
+```
+
+<!-- #region jp-MarkdownHeadingCollapsed=true -->
+## Train Bart
+<!-- #endregion -->
+
+```{python}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+bert_model = bert_model.to(DEVICE)
+fine_tuned_bert_model = fine_tune(bert_model, train_args, test_args, *args['bert_tuning'].values(), train_dataset=pre_train, 
+                                  is_save_model=True, model_name='pre_train_fine_tuned_bert_model')
+```
+
+```{python}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+bert_model = bert_model.to(DEVICE)
+fine_tuned_bert_model = fine_tune(bert_model, train_args, test_args, *args['bert_tuning'].values(), train_dataset=pre_train, 
+                                  is_save_model=True, model_name='pre_train_fine_tuned_bert_model_2')
+```
+
+<!-- #region jp-MarkdownHeadingCollapsed=true -->
+## Training Rational Transformer On MultiNLI
+<!-- #endregion -->
+
+```{python}
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/pre_train_fine_tuned_bert_model_2/epoch=1_lr=2e-05_batch_size=32.pt'))
+# k = 8
+# fine_tuned_rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k)
+# fine_tuned_rational_transformer_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/pre_train_fine_tuned_rational_transformer_model_epoch/epoch=0_lr=2e-05_batch_size=128_k=8.pt'))
+# fine_tuned_rational_transformer_model = fine_tuned_rational_transformer_model.to(DEVICE)
+```
+
+```{python}
+idx = 9
+sample = train_dataset[idx]
+print(f"group={sample['groups'].item()}")
+print(f"label={sample['labels'].item()}")
+print(tokenizer.decode(sample['input_ids']))
+
+input_ids=torch.tensor([sample['input_ids'].numpy()] * 2).to(DEVICE)
+attention_mask=torch.tensor([sample['attention_mask'].numpy()] * 2).to(DEVICE)
+token_type_ids=torch.tensor([sample['segments_ids'].numpy()] * 2).to(DEVICE)
+labels=torch.tensor([sample['labels'].item()] * 2).to(DEVICE)
+
+logits = fine_tuned_bert_model.bert_model.bert(
+    input_ids=input_ids,
+    attention_mask=attention_mask,
+    token_type_ids=token_type_ids,
+    # labels=labels,
+)
+# print(f"predict={torch.argmax(logits['logits'][0], 1).item()}")
+```
+
+```{python}
+logits[0].shape
+```
+
+```{python}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': True,
+    'test_not_masking': False,
+}
+
+fine_tuned_bert_model = BertForSequence(num_labels=3, tune_only_last_layer=False)
+fine_tuned_bert_model = fine_tuned_bert_model.to(DEVICE)
+fine_tuned_bert_model.load_state_dict(torch.load('./models/dataset=MultiNLI/max_length=64/pre_train_fine_tuned_bert_model_2/epoch=1_lr=2e-05_batch_size=32.pt'))
+
+for name, param in fine_tuned_bert_model.named_parameters():
+    param.requires_grad = False
+k = 20
+
+rational_transformer_model = MyBert(fine_tuned_bert_model, num_labels=3, k=k).to(DEVICE)
+fine_tuned_rational_transformer_model = fine_tune(rational_transformer_model, 
+                                                  train_args, test_args, *args['rational_transformer_training'].values(), 
+                                                  train_dataset=pre_train,
+                                                  is_save_model=True, k=k,
+                                                  model_name="pre_train_fine_tuned_rational_transformer_model_")
+```
+
+```{python}
+
+```
+
+<!-- #region id="vDcvbiOiftyG" -->
+# MultiNLI
+<!-- #endregion -->
+
+### BERT Explainability
+
+```{python}
+from BERT_explainability.modules.BERT.BertForSequenceClassification import BertForSequenceClassification
+```
+
+```{python}
+train_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+test_args = {
+    'use_grad_cam': False,
+    'rational_replacing': False,
+    'rational_augmentation': False,
+    'label_replacing': False,
+    'agument': False,
+    'test_reverse': False,
+    'test_not_masking': False,
+}
+
+bert_model = BertForSequenceClassification.from_pretrained("bert-base-uncased")
+bert_model = bert_model.to(DEVICE)
+fine_tuned_bert_model = fine_tune(bert_model, train_args, test_args, *args['bert_tuning'].values())
+```
 
 <!-- #region id="HNUCR8IZgEj4" jp-MarkdownHeadingCollapsed=true -->
 ### Training Bert on MultiNLI

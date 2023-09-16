@@ -1,0 +1,41 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.15.1
+  kernelspec:
+    display_name: Python 3
+    name: python3
+---
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, id="alKHbIooV50e", executionInfo={'status': 'ok', 'timestamp': 1694856978875, 'user_tz': -210, 'elapsed': 31642, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}}, outputId="2aa5cea7-87ea-4a96-faa1-bb2de6fa2df8"}
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, id="DNFrKlq1WEdh", executionInfo={'status': 'ok', 'timestamp': 1694857011012, 'user_tz': -210, 'elapsed': 10, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}}, outputId="d3453f77-df19-44a6-8834-32bcce51236f"}
+# cd /content/drive/MyDrive/Colab\ Notebooks/Shared\ Lab/BERT_explainability
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, id="xfkdXFqjWYEN", executionInfo={'status': 'ok', 'timestamp': 1694857065445, 'user_tz': -210, 'elapsed': 15325, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}}, outputId="5ea2ecbf-b6e0-4c58-9742-59d5bcd7674f"}
+# !pip install transformers
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, id="VDoiAad_XiVC", executionInfo={'status': 'ok', 'timestamp': 1694857595204, 'user_tz': -210, 'elapsed': 8818, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}}, outputId="56408954-4b8e-45ab-8f77-968f88e89db6"}
+# !pip install gensim
+```
+
+```{python id="Yg6YXDOWYpMC", executionInfo={'status': 'ok', 'timestamp': 1694858074504, 'user_tz': -210, 'elapsed': 10, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}}}
+from modules.BERT.BertForSequenceClassification import BertForSequenceClassification
+```
+
+```{python colab={'base_uri': 'https://localhost:8080/'}, id="C3b3MT8aYv4_", executionInfo={'status': 'ok', 'timestamp': 1694858112687, 'user_tz': -210, 'elapsed': 1131, 'user': {'displayName': 'Hamidreza Yaghoubi', 'userId': '02901691238973721504'}}, outputId="8d50161d-e1f6-4024-aa4d-7e0085abbb7d"}
+model = BertForSequenceClassification.from_pretrained("bert-base-uncased")
+```
+
+```{python id="7cw6KsCAZtTe"}
+
+```
