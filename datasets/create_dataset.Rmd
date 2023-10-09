@@ -474,15 +474,111 @@ pwd
 ```
 
 ```{python}
+metadata_pdf = pd.read_csv('/home/user01/hamidreza/Learning-How-to-Mask-Text-Input-for-Better-Generalization/datasets/raw/all_data_with_identities.csv', index_col=0)
+```
+
+```{python}
+metadata_pdf.loc[:, 'more_than_one_identity']
+```
+
+```{python}
+metadata_pdf.columns
+```
+
+```{python}
 full_dataset = JigsawDataset(
             root_dir='/home/user01/hamidreza/Learning-How-to-Mask-Text-Input-for-Better-Generalization/datasets',
             target_name='toxicity',
-            confounder_names=['only_label', 'identity_any'],
+            # confounder_names=['identity_any', 'only_label'],
+            confounder_names=['identity_any'],
             model_type='bert-base-uncased',
             augment_data=False,
             metadata_csv_name='all_data_with_identities.csv',
             batch_size=16
         )
+
+random_splited_dataset = full_dataset.get_splits(['train','val','test'])
+```
+
+```{python}
+PRE_TRAINED_MODEL_NAME = 'bert-base-uncased'
+tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME, do_lower_case=True)
+```
+
+```{python}
+data_type = 'train'
+input_list = []
+label_list = []
+group_list = []
+segment_list = []
+for index in tqdm(range(len(random_splited_dataset[data_type]))):
+    try:
+        input = random_splited_dataset[data_type][index][0][:, 0]
+    except:
+        print("OOPS")
+        continue
+    string_input = tokenizer.decode(input)
+    clean_string_input = [x for x in string_input.split() if x not in ['[CLS]', '[SEP]', '[PAD]']]
+    string_input = " ".join(clean_string_input)
+    # attention_mask = random_train_dataset[data_type][0][0][:, 1]
+    # split = random_train_dataset[data_type][index][0][:, 2]
+    segment_ids = random_splited_dataset[data_type][index][0][:, 2]
+    label = random_splited_dataset[data_type][index][1]
+    group = random_splited_dataset[data_type][index][2]
+
+    input_list.append(string_input)
+    label_list.append(label)
+    group_list.append(group)
+    segment_list.append(segment_ids.numpy())
+```
+
+```{python}
+train_pdf = pd.DataFrame(data={'text':input_list, 'label':label_list, 'group':group_list, 'segments':segment_list})
+train_pdf.head()
+```
+
+```{python}
+train_pdf.to_csv('Civil_comments_JTT_dataset/train.csv', index=False)
+```
+
+```{python}
+data_type = 'test'
+test_input_list = []
+test_label_list = []
+test_group_list = []
+test_segment_list = []
+for index in tqdm(range(len(random_splited_dataset[data_type]))):
+    try:
+        input = random_splited_dataset[data_type][index][0][:, 0]
+    except:
+        print("OOPS")
+        continue
+    string_input = tokenizer.decode(input)
+    clean_string_input = [x for x in string_input.split() if x not in ['[CLS]', '[SEP]', '[PAD]']]
+    string_input = " ".join(clean_string_input)
+    # attention_mask = random_train_dataset[data_type][0][0][:, 1]
+    # split = random_train_dataset[data_type][index][0][:, 2]
+    segment_ids = random_splited_dataset[data_type][index][0][:, 2]
+    label = random_splited_dataset[data_type][index][1]
+    group = random_splited_dataset[data_type][index][2]
+
+    test_input_list.append(string_input)
+    test_label_list.append(label)
+    test_group_list.append(group)
+    test_segment_list.append(segment_ids.numpy())
+```
+
+```{python}
+test_pdf = pd.DataFrame(data={'text':test_input_list, 'label':test_label_list, 'group':test_group_list, 'segments':test_segment_list})
+test_pdf.head()
+```
+
+```{python}
+len(test_pdf)
+```
+
+```{python}
+test_pdf.to_csv('Civil_comments_JTT_dataset/test.csv', index=False)
 ```
 
 ```{python}
